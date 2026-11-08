@@ -187,7 +187,10 @@ export class HeldItems {
     const g = this.game;
     if (!g.party.length) { g.toast('You don\'t have a partner yet!', 'muted'); return; }
     const t = g.interactions.target;
-    if (!t?.speciesId) { g.toast('Aim at a wild creature, then click to send out your partner!', 'muted'); return; }
+    // aiming at your friend (or their partner): challenge them to a friendly battle
+    if (t && (t.id === 'player' || t.id === 'friendcomp')) { g.challengeFriend(); return; }
+    // aiming at nothing wild: send your partner out to walk with you / call it back
+    if (!t?.speciesId) { g.toggleCompanion(); return; }
     if (g.interactions.hitDist > 30) { g.toast('Too far — get within 30 m.', 'muted'); return; }
     g.audio.play('throw');
     g.requestBattle(t);

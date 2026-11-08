@@ -6,6 +6,7 @@ import { SPECIES_BY_ID } from '../data/creatures.js';
 import { MOVES } from '../data/moves.js';
 import { TYPES, findCombo, effectiveness } from '../data/types.js';
 import { useMove, pickWildMove, stat, xpReward, grantXp } from './rules.js';
+import { PvpBattle } from './pvp.js';
 
 const ACT_DELAY = 1.25;
 let battleIds = 1;
@@ -326,9 +327,26 @@ export class BattleManager {
 
   choose(actor, moveIndex) { this.battleOf(actor.id)?.choose(actor.id, moveIndex); }
 
+  /** Start a friendly battle between the two ranchers. */
+  startPvp(a, b) {
+    if (!a || !b) return false;
+    for (const x of [a, b]) {
+      if (this.battleOf(x.id)) { a.toast(`${x.name} is already in a battle.`, 'muted'); b.toast(`${x.name} is already in a battle.`, 'muted'); return false; }
+      if (!x.party.some((c) => c.hp > 0)) { a.toast(`${x.name} has no healthy creatures.`, 'muted'); b.toast(`${x.name} has no healthy creatures.`, 'muted'); return false; }
+    }
+    const battle = new PvpBattle(this, a, b, battleIds++);
+    this.battles.set(battle.id, battle);
+    battle.say(`⚔️ Friendly battle: ${a.name} vs ${b.name}!`);
+    for (const x of battle.allies) this.emit({ b: battle.id, sendOut: x.key, text: `Go, ${nameOf(x.inst)}!` });
+    this.game.sharedBanner('⚔️ Friendly battle!', `${a.name} vs ${b.name} — creatures are healed afterwards`, '#ef476f', 'zone');
+    this.changed();
+    return true;
+  }
+
   run(actor) {
     const b = this.battleOf(actor.id);
     if (!b) return;
+    if (b.pvp) { b.forfeit(actor); return; }
     b.allies = b.allies.filter((a) => a.owner !== actor.id);
     actor.toast('You got away safely.', 'muted');
     if (!b.allies.length) this.end(b, 'run');
@@ -375,7 +393,8 @@ export class BattleManager {
       // a rancher who wanders far away flees the battle
       for (const owner of b.owners()) {
         const p = this.posOf(owner);
-        if (p && p.distanceTo(b.center) > 45) this.run(owner === 'guest' ? this.game.guestActor : this.game.local);
+        const actor = owner === 'guest' ? this.game.guestActor : this.game.local;
+        if (p && actor && p.distanceTo(b.center) > 45) { this.run(actor); break; }
       }
     }
     if (this._dirty) {
@@ -385,7 +404,10 @@ export class BattleManager {
   }
 
   clear() {
-    for (const b of [...this.battles.values()]) this.end(b, 'run');
+    for (const b of [...this.battles.values()]) {
+      if (b.pvp) b.forfeit(b.actors[1]);
+      else this.end(b, 'run');
+    }
   }
 }
 

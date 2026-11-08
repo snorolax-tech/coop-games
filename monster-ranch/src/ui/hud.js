@@ -21,7 +21,7 @@ export class HUD {
         <div class="topright">
           <div class="coins">🪙 <span class="coin-count">0</span></div>
           <div class="room hidden">🏠 Room <b class="room-code"></b> · <span class="room-players">1/2</span></div>
-          <div class="keys">Tab Inventory · E Interact · 1-6 Items · B Build · Enter Chat</div>
+          <div class="keys">Tab Inventory · E Interact · 1-6 Items · F Partner · B Build · M Map · Enter Chat</div>
         </div>
         <div class="hotbar"></div>
         <div class="toasts"></div>

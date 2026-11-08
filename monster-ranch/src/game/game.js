@@ -39,6 +39,8 @@ import { ShopPanel, BoardPanel } from '../ui/shop.js';
 import { SUPPLIES, UPGRADES, ZONE_PASSES, makeRequest } from '../data/shop.js';
 import { GUARDIANS } from '../data/creatures.js';
 import { Minimap } from '../ui/minimap.js';
+import { Companion } from '../creatures/companion.js';
+import { DuelPrompt } from '../ui/battle.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -134,6 +136,11 @@ export class Game {
     this.shop = new ShopPanel(uiRoot, this);
     this.board = new BoardPanel(uiRoot, this);
     this.minimap = new Minimap(uiRoot, this);
+    this.companion = new Companion(this, { local: true });
+    this.friendComp = new Companion(this, { local: false });
+    this.companionOut = localStorage.getItem('mr-companion') === '1';
+    this.duelPrompt = new DuelPrompt(uiRoot, this);
+    this.pendingDuel = null;
 
     this._wirePlayer();
     this._wireNet();
@@ -232,6 +239,10 @@ export class Game {
     net.on('demolish', (m) => { if (this.guestActor) this.buildings.demolish(this.guestActor, m.id); });
     net.on('rmove', (m) => { if (this.guestActor) this._ranchMove(this.guestActor, m.uid, m.act); });
     net.on('shop', (m) => { if (this.guestActor) this._shop(this.guestActor, m.op, m.id, m.n); });
+    net.on('petc', () => { if (this.guestActor) this._petLead(this.guestActor); });
+    net.on('duel', () => { if (this.guestActor) this._duelRequest(this.guestActor); });
+    net.on('duelAns', (m) => { if (this.guestActor) this._duelAnswer(this.guestActor, !!m.ok); });
+    net.on('duelAsk', (m) => this.duelPrompt.show(m.from));
     net.on('board', (m) => { if (this.guestActor) this._board(this.guestActor, m.op, m.i); });
     net.on('hit', (m) => {
       const def = this.interactions.byId.get(m.id);
@@ -328,19 +339,26 @@ export class Game {
     this._removeRemote();
     this.remote = new Rancher(this.scene, profile);
     this.remote.color = profile.color;
+    this._remoteDef = this.interactions.add({
+      id: 'player', root: this.remote.root, name: `${profile.name} (rancher)`, range: 30, color: profile.color,
+      sub: () => (this.items.current.kind === 'partner' ? 'Click: challenge to a friendly battle ⚔️' : 'Hold Partner (6) and click to challenge to a friendly battle'),
+    });
   }
 
   _removeRemote() {
+    if (this._remoteDef) { this.interactions.remove(this._remoteDef); this._remoteDef = null; }
+    this.friendComp.clear();
     if (this.remote) { this.remote.dispose(); this.remote = null; }
   }
 
   _pose() {
     const p = this.player;
-    return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), this.items.index, this.items.swings || 0];
+    return [r2(p.pos.x), r2(p.pos.y), r2(p.pos.z), r2(p.yaw), r2(p.pitch), this.items.index, this.items.swings || 0, this.companion.state()];
   }
 
   _applyPose(r, a) {
     if (!a) return;
+    this.friendComp.apply(a[7] || null);
     r.setPose(a[0], a[1], a[2], a[3], a[4], a[5]);
     if (a[6] !== r.lastSwings) { if (r.lastSwings !== undefined) r.swing(); r.lastSwings = a[6]; }
   }
@@ -537,6 +555,80 @@ export class Game {
   requestDemolish(id) {
     if (this.isGuest) this.net.send({ t: 'demolish', id });
     else this.buildings.demolish(this.local, id);
+  }
+
+  // --- companion (partner walking with you) & friendly battles --------------------------------
+
+  toggleCompanion(force) {
+    const lead = this.party[0];
+    if (!lead) { this.toast('You need a partner first!', 'muted'); return; }
+    if (this.inBattle) return;
+    this.companionOut = force ?? !this.companionOut;
+    localStorage.setItem('mr-companion', this.companionOut ? '1' : '0');
+    const near = this.player.pos.clone().add(new THREE.Vector3(Math.cos(this.player.yaw) * 1.4, 0, -Math.sin(this.player.yaw) * 1.4));
+    this.companion.setCreature(lead.species, lead.shiny);
+    this.companion.show(this.companionOut, near);
+    this.audio.play(this.companionOut ? 'chime' : 'ui');
+    this.toast(this.companionOut ? `${this.creatureName(lead)} is walking with you! (F or 6+click to call back)` : `${this.creatureName(lead)} came back.`, 'good');
+    if (this.companionOut) this.companion.say('♥', 1.6);
+  }
+
+  petCompanion() {
+    const now = performance.now();
+    if (now - (this._petCompAt || 0) < 15000) { this.toast(`${this.creatureName(this.party[0])} is still happy from the last pets ♥`, 'muted'); return; }
+    this._petCompAt = now;
+    this.companion.say('♥', 1.8);
+    this.companion.excited = 2;
+    this.fx.sparkle(this.companion.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xff8fb8, 14);
+    this.audio.play('chime');
+    if (this.isGuest) this.net.send({ t: 'petc' });
+    else this._petLead(this.local);
+  }
+
+  /** Host: petting your walking partner makes it a bit happier. */
+  _petLead(actor) {
+    const c = actor.party[0];
+    if (!c) return;
+    c.happiness = Math.min(100, (c.happiness ?? 70) + 3);
+    actor.toast(`${this.creatureName(c)} loves you! (♥ ${Math.round(c.happiness)})`, 'good');
+    if (SPECIES_BY_ID[c.species].evolve?.happiness) this.queueEvolution(c, actor);
+    this.partyChanged(actor);
+  }
+
+  challengeFriend() {
+    if (!this.remote) { this.toast('Your friend isn\'t here.', 'muted'); return; }
+    if (!this.party.some((c) => c.hp > 0)) { this.toast('Your creatures need rest first (Farmhouse).', 'muted'); return; }
+    if (this.isGuest) this.net.send({ t: 'duel' });
+    else this._duelRequest(this.local);
+  }
+
+  /** Host: someone challenged the other rancher. */
+  _duelRequest(from) {
+    const to = from === this.local ? this.guestActor : this.local;
+    if (!to) return;
+    if (this.pendingDuel) { from.toast('A challenge is already waiting for an answer.', 'muted'); return; }
+    const pa = this.battles.posOf(from.id), pb = this.battles.posOf(to.id);
+    if (pa && pb && pa.distanceTo(pb) > 30) { from.toast('Get closer to your friend (within 30 m) to challenge them.', 'muted'); return; }
+    this.pendingDuel = { from, to, t: 22 };
+    from.toast(`Challenge sent to ${to.name}… ⚔️`, 'good');
+    if (to === this.local) this.duelPrompt.show(from.name);
+    else this.net.send({ t: 'duelAsk', from: from.name });
+  }
+
+  /** Called by the prompt (my answer to a challenge). */
+  answerDuel(ok) {
+    if (this.isGuest) this.net.send({ t: 'duelAns', ok });
+    else this._duelAnswer(this.local, ok);
+    if (ok) this.input.requestLock();
+  }
+
+  _duelAnswer(actor, ok) {
+    const d = this.pendingDuel;
+    if (!d || d.to !== actor) return;
+    this.pendingDuel = null;
+    if (!ok) { d.from.toast(`${actor.name} declined the battle.`, 'muted'); return; }
+    if (this.companionOut) this.companion.show(false);
+    this.battles.startPvp(d.from, d.to);
   }
 
   // --- shop, notice board, upgrades, guardians ----------------------------------------------
@@ -1116,6 +1208,9 @@ export class Game {
     this.catching.pending = [];
     this.buildMode.toggle(false);
     this.minimap.show(false);
+    this.companion.clear();
+    this.pendingDuel = null;
+    this.duelPrompt.open = false; this.duelPrompt.el.classList.add('hidden');
     this.barn.toggle(false);
     this.shop.toggle(false);
     this.board.toggle(false);
@@ -1278,6 +1373,17 @@ export class Game {
     if (this.isAuthority) { this.battles.update(dt); this.catching.update(dt); this._regen(dt); }
     this.battleView.update(dt);
     const myBattle = this.myBattle;
+    // partner walking with you (hidden while it's out battling)
+    const lead = this.party[0];
+    this.companion.setCreature(lead?.species, lead?.shiny);
+    const wantComp = this.companionOut && !!lead && !myBattle;
+    if (wantComp !== this.companion.visible) this.companion.show(wantComp, this.player.pos.clone().add(new THREE.Vector3(1.4, 0, 1.4)));
+    this.companion.follow(dt, this.player);
+    this.friendComp.updateRemote(dt);
+    if (active && input.wasPressed('KeyF')) this.toggleCompanion();
+    // friendly-battle challenges
+    this.duelPrompt.update(dt, input);
+    if (this.pendingDuel) { this.pendingDuel.t -= dt; if (this.pendingDuel.t <= 0) { this.pendingDuel.from.toast('No answer to your challenge.', 'muted'); this.pendingDuel = null; } }
     // When it's my turn to pick a move, free the mouse so the move buttons can be clicked.
     const meAlly = myBattle?.allies.find((a) => a.owner === this.myId && a.hp > 0);
     const myTurn = !!(myBattle && myBattle.phase === 'choose' && meAlly && !meAlly.chose);

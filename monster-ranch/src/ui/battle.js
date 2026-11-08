@@ -22,6 +22,41 @@ function card(b, mine) {
   </div>`;
 }
 
+/** "X challenges you to a friendly battle" — Y / N or click. */
+export class DuelPrompt {
+  constructor(root, game) {
+    this.game = game;
+    this.open = false;
+    this.el = h(`<div class="duel hidden"><div class="duel-text"></div>
+      <div class="duel-btns"><button class="btn primary" data-ok="1"><b>Y</b> Accept</button><button class="btn" data-ok="0"><b>N</b> Decline</button></div></div>`);
+    root.appendChild(this.el);
+    this.el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => this.answer(b.dataset.ok === '1'));
+  }
+
+  show(from) {
+    this.open = true;
+    this.t = 20;
+    this.el.querySelector('.duel-text').textContent = `⚔️ ${from} challenges you to a friendly battle!`;
+    this.el.classList.remove('hidden');
+    this.game.audio.play('zone');
+  }
+
+  answer(ok) {
+    if (!this.open) return;
+    this.open = false;
+    this.el.classList.add('hidden');
+    this.game.answerDuel(ok);
+  }
+
+  update(dt, input) {
+    if (!this.open) return;
+    this.t -= dt;
+    if (this.t <= 0) return this.answer(false);
+    if (input.pressedAny('KeyY')) this.answer(true);
+    else if (input.pressedAny('KeyN')) this.answer(false);
+  }
+}
+
 export class BattleHUD {
   constructor(root, game) {
     this.game = game;
@@ -50,21 +85,29 @@ export class BattleHUD {
     this.sig = sig;
     this.el.classList.remove('hidden');
     this.el.classList.toggle('cursor', !this.game.input.locked);
-    this.el.querySelector('.ballies').innerHTML = battle.allies.map((a) => card(a, a.owner === myId)).join('');
-    this.el.querySelector('.bfoes').innerHTML = battle.foes.map((f) => card(f, false)).join('');
+    this.el.classList.toggle('pvp', !!battle.pvp);
+    // in a friendly battle: my creature on the left, my friend's on the right
+    const left = battle.pvp ? battle.allies.filter((a) => a.owner === myId) : battle.allies;
+    const right = battle.pvp ? battle.allies.filter((a) => a.owner !== myId) : battle.foes;
+    this.el.querySelector('.ballies').innerHTML = left.map((a) => card(a, a.owner === myId)).join('');
+    this.el.querySelector('.bfoes').innerHTML = right.map((f) => card(f, false)).join('');
+    this.el.querySelector('.bhint').innerHTML = battle.pvp
+      ? '⚔️ <b>Friendly battle</b> — click a move (or press 1-4). Everyone is healed afterwards.'
+      : 'Click a move (or press 1-4). To befriend: <b>click the game</b> to aim, scroll to a 🔵 Bond Orb and throw it!';
+    this.el.querySelector('.brun').innerHTML = battle.pvp ? '<b>R</b> 🏳️ Forfeit' : '<b>R</b> 🏃 Run';
     this.el.querySelector('.blog').innerHTML = battle.log.map((l, i) => `<div class="${i === battle.log.length - 1 ? 'last' : ''}">${l}</div>`).join('');
     const me = battle.allies.find((a) => a.owner === myId && a.hp > 0);
     const moves = this.el.querySelector('.bmoves');
     if (battle.phase === 'choose' && me && !me.chose) {
       // if my teammate already picked, show which of my moves would trigger a combo
-      const mate = battle.allies.find((a) => a.owner !== myId && a.ct && a.hp > 0);
+      const mate = battle.pvp ? null : battle.allies.find((a) => a.owner !== myId && a.ct && a.hp > 0);
       moves.innerHTML = me.moves.map((id, i) => {
         const m = MOVES[id], t = TYPES[m.type];
         const combo = mate && m.power && MOVES_POWER(mate) ? findCombo(m.type, mate.ct) : null;
         return `<button class="bmove ${combo ? 'combo' : ''}" data-move="${i}" style="--tc:${t.color}"><b>${i + 1}</b> ${m.name}<small>${t.icon} ${m.power ? m.power : 'status'}${combo ? ` · ✨ ${combo.name}!` : ''}</small></button>`;
       }).join('');
     } else if (battle.phase === 'choose') {
-      const waiting = battle.allies.filter((a) => !a.chose && a.hp > 0).map((a) => a.ownerName);
+      const waiting = battle.allies.filter((a) => !a.chose && a.hp > 0 && (!battle.pvp || a.owner !== myId)).map((a) => a.ownerName);
       moves.innerHTML = `<div class="bwait">Waiting for ${waiting.join(' & ') || '…'}…</div>`;
     } else {
       moves.innerHTML = '<div class="bwait">⚔️ Turn in progress…</div>';
