@@ -937,6 +937,31 @@ export class Game {
     this.audio.play('ui');
   }
 
+  /** Battle menu: lob a Bond Orb at the (weakest) wild foe. It's a real throw that still has to hit. */
+  throwOrbInBattle() {
+    const b = this.myBattle;
+    if (!b || b.pvp) return;
+    if (!(this.inventory.orb > 0)) { this.toast('You\'re out of Bond Orbs! Buy more at the Ranch Shop.', 'muted'); return; }
+    const now = performance.now();
+    if (now - (this._battleThrowAt || 0) < 1500) return;
+    const foes = b.foes.filter((f) => f.hp > 0).sort((x, y) => x.hp / x.max - y.hp / y.max);
+    const c = foes[0] && this.creatures.list.get(foes[0].nid);
+    if (!c || c.captured) return;
+    this._battleThrowAt = now;
+    const origin = new THREE.Vector3(0.25, -0.15, -0.6).applyMatrix4(this.camera.matrixWorld);
+    const base = this.isGuest ? c.netTarget : c.pos;
+    const target = new THREE.Vector3(base.x, base.y + c.view.height * 0.5, base.z);
+    const flat = target.clone().sub(origin);
+    const T = Math.max(0.35, Math.hypot(flat.x, flat.z) / 14);
+    const vel = new THREE.Vector3(flat.x / T, (flat.y + 0.5 * 22 * T * T) / T, flat.z / T);
+    this.items.select(0);
+    this.items.swingLen = this.items.swing = 0.35;
+    this.items.swings = (this.items.swings || 0) + 1;
+    this.requestThrow('orb', origin, vel);
+    this.toast(`🔵 You throw a Bond Orb at ${c.sp.name}!`, 'good');
+    if (!this.input.locked) this.input.requestLock();
+  }
+
   requestRun() {
     if (this.isGuest) this.net.send({ t: 'brun' });
     else this.battles.run(this.local);
@@ -1396,6 +1421,7 @@ export class Game {
     if (myBattle && canPick) {
       for (let i = 0; i < 4; i++) if (input.pressedAny('Digit' + (i + 1))) { this.requestMove(i); if (!input.locked) input.requestLock(); }
       if (input.pressedAny('KeyR')) { this.requestRun(); if (!input.locked) input.requestLock(); }
+      if (input.pressedAny('KeyC')) this.throwOrbInBattle();
     }
     // battle ended while the cursor was free: wait for a click to keep playing
     if (!myBattle && this.battleCursor && !input.locked) {

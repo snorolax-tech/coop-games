@@ -282,3 +282,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .duel { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); background: rgba(43,45,66,.94); border: 3px solid #ef476f; border-radius: 18px; padding: 14px 18px; text-align: center; pointer-events: auto; animation: toastIn .25s ease-out; }
 .duel-text { font-weight: 900; font-size: 18px; margin-bottom: 10px; }
 .duel-btns { display: flex; gap: 10px; justify-content: center; }
+.bmove.bcatch { --tc: #3a86ff; flex: none; flex-direction: row; align-items: center; gap: 4px; }
+.bmove.bcatch small { opacity: .7; }
+.bmove:disabled { opacity: .45; cursor: not-allowed; }

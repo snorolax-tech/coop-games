@@ -66,6 +66,7 @@ export class BattleHUD {
       <div class="bmoves"></div>
       <div class="bfoot">
         <div class="bhint">Click a move (or press 1-4). To befriend: <b>click the game</b> to aim, scroll to a 🔵 Bond Orb and throw it!</div>
+        <button class="bmove bcatch" data-catch="1"><b>C</b> 🔵 Throw Bond Orb</button>
         <button class="bmove brun" data-run="1"><b>R</b> 🏃 Run</button>
       </div>
     </div>`);
@@ -73,14 +74,16 @@ export class BattleHUD {
     this.el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-move]');
       if (btn) { game.requestMove(+btn.dataset.move); game.input.requestLock(); return; }
-      if (e.target.closest('[data-run]')) { game.requestRun(); game.input.requestLock(); }
+      if (e.target.closest('[data-run]')) { game.requestRun(); game.input.requestLock(); return; }
+      if (e.target.closest('[data-catch]')) { game.throwOrbInBattle(); }
     });
     this.sig = '';
   }
 
   update(battle, myId) {
     if (!battle) { this.el.classList.add('hidden'); this.sig = ''; return; }
-    const sig = JSON.stringify(battle) + myId + this.game.input.locked;
+    const orbs = this.game.inventory.orb || 0;
+    const sig = JSON.stringify(battle) + myId + this.game.input.locked + orbs;
     if (sig === this.sig) return;
     this.sig = sig;
     this.el.classList.remove('hidden');
@@ -95,6 +98,13 @@ export class BattleHUD {
       ? '⚔️ <b>Friendly battle</b> — click a move (or press 1-4). Everyone is healed afterwards.'
       : 'Click a move (or press 1-4). To befriend: <b>click the game</b> to aim, scroll to a 🔵 Bond Orb and throw it!';
     this.el.querySelector('.brun').innerHTML = battle.pvp ? '<b>R</b> 🏳️ Forfeit' : '<b>R</b> 🏃 Run';
+    const catchBtn = this.el.querySelector('.bcatch');
+    catchBtn.style.display = battle.pvp ? 'none' : '';
+    catchBtn.innerHTML = `<b>C</b> 🔵 Throw Bond Orb <small>×${orbs}</small>`;
+    catchBtn.disabled = orbs <= 0 || !battle.foes.some((f) => f.hp > 0);
+    this.el.querySelector('.bhint').innerHTML = battle.pvp
+      ? '⚔️ <b>Friendly battle</b> — click a move (or press 1-4). Everyone is healed afterwards.'
+      : 'Click a move (or press 1-4). Weaken it first, then <b>Throw Bond Orb</b> (C) to befriend it!';
     this.el.querySelector('.blog').innerHTML = battle.log.map((l, i) => `<div class="${i === battle.log.length - 1 ? 'last' : ''}">${l}</div>`).join('');
     const me = battle.allies.find((a) => a.owner === myId && a.hp > 0);
     const moves = this.el.querySelector('.bmoves');
