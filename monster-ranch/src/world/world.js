@@ -110,7 +110,7 @@ export class World {
       this._place(b.group, x, z, rot);
       this.colliders.box(x, z, b.hw, b.hd, rot, b.top);
       this.reserve(x, z, 12);
-      I.add({ id: 'barn', root: b.group, name: 'Big Red Barn', sub: 'Creature storage opens in Stage 4', use: (a) => a.toast('The barn will house your creatures (Stage 4)', 'muted') });
+      I.add({ id: 'barn', root: b.group, name: 'Big Red Barn', sub: 'E  Move creatures between your party and the ranch', localUse: () => game.openBarn() });
     }
     // shop stall
     {

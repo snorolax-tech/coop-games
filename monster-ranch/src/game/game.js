@@ -30,6 +30,11 @@ import { Catching } from '../catching/catching.js';
 import { createCreature } from '../creatures/instance.js';
 import { STARTERS } from '../ui/starter.js';
 import { ratingPoints, ratingInfo } from './rating.js';
+import { Buildings } from '../ranch/buildings.js';
+import { RanchSim } from '../ranch/ranch.js';
+import { BuildMode } from '../ui/build.js';
+import { BarnPanel } from '../ui/barn.js';
+import { HOTBAR } from '../data/items.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -84,6 +89,7 @@ export class Game {
       get name() { return game.profile.name; },
       get inventory() { return game.inventory; },
       get party() { return game.party; },
+      held: () => game.items.current.id,
       give: (item, n, quiet) => this.give(item, n, quiet),
       toast: (msg, kind) => this.toast(msg, kind),
     };
@@ -107,6 +113,10 @@ export class Game {
     this.battleHUD = new BattleHUD(uiRoot, this);
     this.catching = new Catching(this);
     this.starter = new StarterPicker(uiRoot, this);
+    this.buildings = new Buildings(this);
+    this.ranchSim = new RanchSim(this);
+    this.buildMode = new BuildMode(uiRoot, this);
+    this.barn = new BarnPanel(uiRoot, this);
 
     this._wirePlayer();
     this._wireNet();
@@ -167,6 +177,7 @@ export class Game {
       const inv = { ...newInventory(), ...(saved.inv || {}) };
       const actor = {
         id: 'guest', name, inventory: inv, party: saved.party || [],
+        held: () => HOTBAR[this.remote?.item]?.id,
         give: (item, n, quiet) => { inv[item] = (inv[item] || 0) + n; net.send({ t: 'give', item, n, quiet: !!quiet, inv }); },
         toast: (msg, kind) => net.send({ t: 'toast', msg, kind }),
       };
@@ -177,6 +188,7 @@ export class Game {
         time: this.world.sky.time, unlocked: [...this.unlocked], landmarks: [...this.landmarks],
         nodes: this.world.resources.flags(), inv, party: actor.party, pr: this.projectiles.snapshot(),
         cr: this.creatures.snapshot(), dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
+        ranch: this._ranchMsg(),
       });
       this.battles.changed();
       this.updateRating(true);
@@ -189,8 +201,11 @@ export class Game {
     net.on('p', (m) => { if (this.remote) this._applyPose(this.remote, m.p); });
     net.on('use', (m) => {
       const def = this.interactions.byId.get(m.id);
-      if (def?.use && this.guestActor && this._guestNear(def)) def.use(this.guestActor);
+      if (def?.use && this.guestActor && this._guestNear(def)) def.use(this.guestActor, m.mode);
     });
+    net.on('build', (m) => { if (this.guestActor) this.buildings.place(this.guestActor, m.type, m.x, m.z, m.rot); });
+    net.on('demolish', (m) => { if (this.guestActor) this.buildings.demolish(this.guestActor, m.id); });
+    net.on('rmove', (m) => { if (this.guestActor) this._ranchMove(this.guestActor, m.uid, m.act); });
     net.on('hit', (m) => {
       const def = this.interactions.byId.get(m.id);
       if (def?.hit && this.guestActor && this._guestNear(def)) def.hit(this.guestActor, m.tool);
@@ -216,7 +231,10 @@ export class Game {
       if (this.remote) this._applyPose(this.remote, m.h);
       this.projectiles.applySnapshot(m.pr);
       if (m.cr) this.creatures.applySnapshot(m.cr);
+      if (m.rc) this.ranchSim.applySnapshot(m.rc);
     });
+    net.on('ranch', (m) => this._applyRanchMsg(m.r));
+    net.on('remote', (m) => this.ranchSim.showEmote(m.id, m.s, m.d));
     net.on('emote', (m) => this.creatures.showEmote(m.id, m.s, m.d));
     net.on('knock', (m) => this.knockback(m.d[0], m.d[1], m.s));
     net.on('seen', (m) => this.markSeen(m.id, true));
@@ -350,6 +368,9 @@ export class Game {
     this.dex = { seen: new Set(m.dex?.seen || []), caught: new Set(m.dex?.caught || []) };
     this.party = m.party || [];
     this.battleView.clear();
+    this.ranchSim.clear();
+    this.ranchSim.authority = false;
+    this._applyRanchMsg(m.ranch);
     this.player.teleport(3, 18, 0);
     this.player.zone = 'ranch';
     this._spawnRemote(m.host);
@@ -362,6 +383,94 @@ export class Game {
   actorById(id) {
     if (id === 'guest') return this.guestActor;
     return this.local;
+  }
+
+  // --- ranch: buildings, ranch creatures, barn --------------------------------------------
+
+  /** Host: an actor's inventory changed by a ranch action. */
+  inventoryChanged(actor) {
+    if (actor?.id === 'guest') this.net.send({ t: 'inv', inv: actor.inventory });
+    else { this.hud.refreshCounts(); if (this.panel.open) this.panel.render(); if (this.buildMode.active) this.buildMode.render(); }
+  }
+
+  /** Host: buildings / ranch members / drops / messes changed. */
+  ranchChanged() { this._ranchDirty = true; }
+
+  _ranchMsg() {
+    return {
+      b: this.buildings.serialize(), st: this.ranchSim.state(), cap: this.ranchCapacity(),
+      list: this.ranch.map((c) => ({ uid: c.uid, species: c.species, level: c.level, shiny: c.shiny, nickname: c.nickname, happiness: Math.round(c.happiness ?? 70) })),
+    };
+  }
+
+  _applyRanchMsg(r) {
+    if (!r) return;
+    this.buildings.apply(r.b || []);
+    this.ranchSim.applyState(r.st || {});
+    this.ranchSummary = r.list || [];
+    this.guestCap = r.cap;
+    if (this.barn.open) this.barn.render();
+  }
+
+  ranchList() { return this.isGuest ? (this.ranchSummary || []) : this.ranch; }
+  ranchCapacity() { return this.isGuest ? (this.guestCap || 6) : this.ranchSim.capacity; }
+
+  _flushRanch() {
+    if (!this._ranchDirty) return;
+    this._ranchDirty = false;
+    this.ranchSim.syncCreatures();
+    this.ranchSim._applyObjects();
+    if (this.net.connected) this.net.send({ t: 'ranch', r: this._ranchMsg() });
+    if (this.barn.open) this.barn.render();
+    this.updateRating();
+    this._saveSoon = 3;
+  }
+
+  openBarn() {
+    this.barn.toggle(true);
+    this.audio.play('open');
+    this.input.exitLock();
+  }
+
+  closeBarn() {
+    this.barn.toggle(false);
+    this.input.requestLock();
+  }
+
+  _ranchMove(actor, uid, act) {
+    if (this.battles.battleOf(actor.id)) { actor.toast('Finish your battle first!', 'muted'); return; }
+    if (act === 'toRanch') {
+      if (actor.party.length <= 1) { actor.toast('Keep at least one partner with you.', 'muted'); return; }
+      const i = actor.party.findIndex((c) => c.uid === uid);
+      if (i < 0) return;
+      const [c] = actor.party.splice(i, 1);
+      this.ranch.push(c);
+      actor.toast(`${this.creatureName(c)} moved to the ranch 🏡`, 'good');
+    } else {
+      if (actor.party.length >= 6) { actor.toast('Your party is full (6).', 'muted'); return; }
+      const i = this.ranch.findIndex((c) => c.uid === uid);
+      if (i < 0) return;
+      const [c] = this.ranch.splice(i, 1);
+      actor.party.push(c);
+      actor.toast(`${this.creatureName(c)} joined your party 🐾`, 'good');
+    }
+    this.partyChanged(actor);
+    this.ranchChanged();
+  }
+
+  requestRanchMove(uid, act) {
+    if (this.isGuest) this.net.send({ t: 'rmove', uid, act });
+    else this._ranchMove(this.local, uid, act);
+  }
+
+  requestBuild(type, x, z, rot) {
+    if (this.isGuest) this.net.send({ t: 'build', type, x, z, rot });
+    else this.buildings.place(this.local, type, x, z, rot);
+  }
+
+  requestDemolish(id) {
+    if (this.isGuest) this.net.send({ t: 'demolish', id });
+    else this.buildings.demolish(this.local, id);
   }
 
   // --- ranch rating ----------------------------------------------------------------------
@@ -377,6 +486,7 @@ export class Game {
     }
     const { points, breakdown } = ratingPoints({
       seen: this.dex.seen.size, caught: this.dex.caught.size, creatures, landmarks: this.landmarks.size, wins: this.stats.wins,
+      buildings: this.buildings.map.size, happy: this.ranchSim.happyCount(),
     });
     const before = this.rating.level;
     const info = ratingInfo(points);
@@ -578,10 +688,11 @@ export class Game {
 
   // --- requests (routed to the host when we're a guest) -------------------------------
 
-  requestUse(def) {
+  requestUse(def, mode) {
+    if (def?.localUse) { def.localUse(); return; } // purely local UI (e.g. the barn)
     if (!def?.use && !this.isGuest) return;
-    if (this.isGuest) { if (def.id) this.net.send({ t: 'use', id: def.id }); return; }
-    def.use(this.local);
+    if (this.isGuest) { if (def.id) this.net.send({ t: 'use', id: def.id, mode }); return; }
+    def.use(this.local, mode);
   }
 
   requestHit(def, tool) {
@@ -686,6 +797,14 @@ export class Game {
     else this.player.teleport(0, 16, 0);
     this.player.zone = this.world.zoneAt(this.player.pos.x, this.player.pos.z);
     this.stats = { wins: 0, ...(d?.stats || {}) };
+    this.buildings.apply(d?.buildings || []);
+    this.ranchSim.clear();
+    this.ranchSim.authority = true;
+    const st = d?.ranchState || {};
+    this.ranchSim.applyState(st);
+    this.ranchSim.nextObj = 1 + Math.max(0, ...(st.d || []).map((o) => o.id), ...(st.m || []).map((o) => o.id));
+    this._ranchDirty = true;
+    this._flushRanch();
     this.rating = { level: 0, points: 0, breakdown: [] };
     this.updateRating(true);
   }
@@ -702,6 +821,8 @@ export class Game {
       unlocked: [...this.unlocked],
       landmarks: [...this.landmarks],
       stats: this.stats,
+      buildings: this.buildings.serialize(),
+      ranchState: this.ranchSim.state(),
       dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       time: this.world.sky.time,
       nodes: this.world.resources.serialize(),
@@ -740,6 +861,11 @@ export class Game {
     this.battleHUD.update(null);
     this.starter.hide();
     this.catching.pending = [];
+    this.buildMode.toggle(false);
+    this.barn.toggle(false);
+    this.ranchSim.clear();
+    this.ranchSim.authority = true;
+    this.buildings.apply([]);
     this.projectiles.clear();
     this.creatures.clear();
     this.creatures.authority = true;
@@ -757,7 +883,7 @@ export class Game {
 
   _onLock(locked) {
     if (locked) { this.pause.show(false); return; }
-    if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open) {
+    if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open && !this.barn.open) {
       this.state = 'paused';
       this.pause.show(true);
     }
@@ -867,7 +993,7 @@ export class Game {
       this.world.sky.time = (this.world.sky.time + dt / DAY_SECONDS) % 1;
     }
     this.player.update(dt, input, !active);
-    this.items.update(dt, input, this.player, active);
+    this.items.update(dt, input, this.player, active && !this.buildMode.active);
     if (this.isGuest) this.projectiles.updateProxies(dt);
     else this.projectiles.update(dt);
     this.remote?.update(dt);
@@ -880,14 +1006,38 @@ export class Game {
       for (let i = 0; i < 4; i++) if (input.wasPressed('Digit' + (i + 1))) this.requestMove(i);
       if (input.wasPressed('KeyR')) this.requestRun();
     }
+    this.ranchSim.update(dt);
+    this.buildings.update(this.world.sky.night);
+    if (this.isAuthority) {
+      this._flushRanch();
+      if (this._saveSoon > 0) { this._saveSoon -= dt; if (this._saveSoon <= 0) this.save(); }
+    }
+    // build mode (B) on the ranch
+    if (active && input.wasPressed('KeyB')) this.buildMode.toggle();
+    this.buildMode.update(dt, input);
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);
 
-    // look-at + interact
+    // look-at + interact (tap E = use, hold E on creatures = pet)
+    const barnWasOpen = this.barn.open;
     const target = active ? this.interactions.update() : null;
     const inRange = this.interactions.inUseRange(target);
     this.hud.setLook(target, target ? this.interactions.subtitle(target) : '');
-    if (active && target && inRange && input.wasPressed('KeyE')) this.requestUse(target);
+    if (active && target && inRange && target.holdable) {
+      if (input.wasPressed('KeyE')) this._hold = { def: target, t: 0 };
+      if (this._hold && this._hold.def === target && input.isDown('KeyE')) {
+        this._hold.t += dt;
+        if (this._hold.t >= 1) { this.requestUse(target, 'pet'); this._hold = null; }
+      } else if (this._hold) {
+        if (this._hold.def === target && this._hold.t < 0.45) this.requestUse(target);
+        this._hold = null;
+      }
+    } else {
+      this._hold = null;
+      if (active && target && inRange && input.wasPressed('KeyE')) this.requestUse(target);
+    }
+    this.hud.setHold(this._hold ? Math.min(1, this._hold.t) : 0);
+    if (barnWasOpen && this.barn.open && (input.pressedAny('Escape') || input.pressedAny('KeyE') || input.pressedAny('Tab'))) this.closeBarn();
 
     // Dex: anything you look at, or that comes close, counts as seen
     if (target?.speciesId) this.markSeen(target.speciesId);
@@ -901,7 +1051,7 @@ export class Game {
 
     // network send
     if (this.net.tick(dt)) {
-      if (this.net.role === 'host') this.net.send({ t: 's', tm: r2(this.world.sky.time * 1000) / 1000, h: this._pose(), pr: this.projectiles.snapshot(), cr: this.creatures.snapshot() });
+      if (this.net.role === 'host') this.net.send({ t: 's', tm: r2(this.world.sky.time * 1000) / 1000, h: this._pose(), pr: this.projectiles.snapshot(), cr: this.creatures.snapshot(), rc: this.ranchSim.snapshot() });
       else this.net.send({ t: 'p', p: this._pose() });
     }
 

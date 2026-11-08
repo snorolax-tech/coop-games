@@ -103,11 +103,12 @@ export class HeldItems {
     // switching
     // in battle, 1-4 pick moves instead of items (the wheel still switches items)
     const inBattle = this.game.inBattle;
-    for (let k = 0; k < HOTBAR.length; k++) {
+    const building = this.game.buildMode?.active;
+    for (let k = 0; k < HOTBAR.length && !building; k++) {
       if (inBattle && k < 4) continue;
       if (input.wasPressed('Digit' + (k + 1))) this.select(k);
     }
-    if (input.wheel) this.select(this.index + input.wheel);
+    if (input.wheel && !building) this.select(this.index + input.wheel);
     if (canAct && input.wasPressed('KeyQ') && !inBattle) this.game.cycleLead();
 
     const cur = this.current;

@@ -217,3 +217,27 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .zone-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .zone-chip { font-size: 12px; font-weight: 800; padding: 3px 9px; border-radius: 999px; border: 2px solid var(--zc); opacity: .6; }
 .zone-chip.open { background: var(--zc); color: #fff; opacity: 1; text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+
+/* ---------- ranch: build mode, barn, hold-to-pet ---------- */
+.build-ui { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: 900px; max-width: 97vw; background: rgba(43,45,66,.9); border: 3px solid #06d6a0; border-radius: 18px; padding: 10px 12px; pointer-events: none !important; }
+.build-title { font-weight: 900; font-size: 17px; margin-bottom: 8px; }
+.build-why { font-size: 14px; font-weight: 700; }
+.build-why.ok { color: #7dffb0; }
+.build-why.bad { color: #ff9b9b; }
+.build-list { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.build-item { background: rgba(255,255,255,.1); border: 2px solid transparent; border-radius: 12px; padding: 6px 4px; text-align: center; position: relative; }
+.build-item.sel { border-color: #ffd166; background: rgba(255,209,102,.18); }
+.build-item.poor { opacity: .5; }
+.bi-key { position: absolute; left: 6px; top: 3px; font-size: 11px; font-weight: 800; opacity: .7; }
+.bi-icon { font-size: 26px; }
+.bi-name { font-size: 12px; font-weight: 800; }
+.bi-cost { font-size: 11px; opacity: .85; margin-top: 2px; }
+.build-hint { font-size: 12px; opacity: .8; margin-top: 8px; text-align: center; }
+.barn .panel-body { max-height: 70vh; }
+.barn-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.barn-cols h3 { margin: 0 0 8px; }
+.barn-card { display: flex; align-items: center; gap: 8px; background: #fff; border: 2px solid #2b2d42; border-radius: 12px; padding: 4px 8px; margin-bottom: 6px; font-size: 13px; }
+.barn-card img { width: 52px; height: 52px; }
+.barn-info { flex: 1; }
+.hold-ring { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%); opacity: 0; transition: opacity .15s; pointer-events: none; }
+.hold-ring i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(#ff8fb8 var(--p, 0%), rgba(255,255,255,.15) 0); -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); }

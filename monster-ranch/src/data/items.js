@@ -10,6 +10,9 @@ export const ITEMS = {
   ember:     { name: 'Emberstone',  icon: '🔥', desc: 'A warm rock from the Cinder Hills.', sell: 8 },
   shell:     { name: 'Shimmer Shell', icon: '🐚', desc: 'Found by the lake. Very shiny.', sell: 5 },
   mushroom:  { name: 'Puffcap',     icon: '🍄', desc: 'A bouncy forest mushroom.', sell: 4 },
+  battery:   { name: 'Spark Battery', icon: '🔋', desc: 'Charged by a happy Spark creature.', sell: 8 },
+  water:     { name: 'Water Bucket',  icon: '🪣', desc: 'Filled by a happy Splash creature.', sell: 6 },
+  feather:   { name: 'Fluffy Feather', icon: '🪶', desc: 'Dropped by a happy Breeze creature.', sell: 7 },
 };
 
 // Held tools / throwables in the hotbar (keys 1-5).
@@ -23,5 +26,5 @@ export const HOTBAR = [
 ];
 
 export function newInventory() {
-  return { orb: 10, treat: 6, berry: 0, glowberry: 0, flower: 0, wood: 0, stone: 0, ember: 0, shell: 0, mushroom: 0, coins: 50 };
+  return { orb: 10, treat: 6, berry: 0, glowberry: 0, flower: 0, wood: 0, stone: 0, ember: 0, shell: 0, mushroom: 0, battery: 0, water: 0, feather: 0, coins: 50 };
 }

@@ -1,4 +1,4 @@
-// In-game HUD: crosshair, look-at label, hotbar, clock/zone, coins, toasts, zone banner.
+﻿// In-game HUD: crosshair, look-at label, hotbar, clock/zone, coins, toasts, zone banner.
 import { HOTBAR, ITEMS } from '../data/items.js';
 import { ZONES } from '../world/zones.js';
 
@@ -10,6 +10,7 @@ export class HUD {
     this.el = h(`
       <div class="hud hidden">
         <div class="crosshair"><span></span></div>
+        <div class="hold-ring"><i></i></div>
         <div class="look"><div class="look-name"></div><div class="look-sub"></div></div>
         <div class="topleft">
           <div class="zone-pill"><span class="zone-dot"></span><span class="zone-name"></span></div>
@@ -20,7 +21,7 @@ export class HUD {
         <div class="topright">
           <div class="coins">🪙 <span class="coin-count">0</span></div>
           <div class="room hidden">🏠 Room <b class="room-code"></b> · <span class="room-players">1/2</span></div>
-          <div class="keys">Tab Inventory · E Interact · 1-5 Items · Enter Chat</div>
+          <div class="keys">Tab Inventory · E Interact · 1-6 Items · B Build · Enter Chat</div>
         </div>
         <div class="hotbar"></div>
         <div class="toasts"></div>
@@ -72,6 +73,13 @@ export class HUD {
     this.$('.look-sub').textContent = sub;
     look.classList.add('on');
     this.$('.crosshair').classList.add('on');
+  }
+
+  /** Progress ring for hold-E petting (0..1). */
+  setHold(p) {
+    const r = this.$('.hold-ring');
+    r.style.opacity = p > 0.05 ? 1 : 0;
+    r.querySelector('i').style.setProperty('--p', `${Math.round(p * 100)}%`);
   }
 
   setRating(r) {
