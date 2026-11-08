@@ -1,7 +1,11 @@
 // Battle HUD: HP cards for both sides, a short battle log and the move menu (keys 1-4, R to run).
 import { MOVES } from '../data/moves.js';
-import { TYPES } from '../data/types.js';
+import { TYPES, findCombo } from '../data/types.js';
 import { SPECIES_BY_ID } from '../data/creatures.js';
+
+// the teammate's chosen move type is only sent as `ct`; status moves never combo, and
+// `ct` is only set for real choices, so any ct counts as a damaging pick when its type isn't neutral
+const MOVES_POWER = (mate) => mate.ct && mate.ct !== 'neutral';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const STATUS = { burn: '🔥BRN', sleep: '💤SLP', paralyze: '⚡PAR' };
@@ -47,9 +51,12 @@ export class BattleHUD {
     const me = battle.allies.find((a) => a.owner === myId && a.hp > 0);
     const moves = this.el.querySelector('.bmoves');
     if (battle.phase === 'choose' && me && !me.chose) {
+      // if my teammate already picked, show which of my moves would trigger a combo
+      const mate = battle.allies.find((a) => a.owner !== myId && a.ct && a.hp > 0);
       moves.innerHTML = me.moves.map((id, i) => {
         const m = MOVES[id], t = TYPES[m.type];
-        return `<button class="bmove" data-move="${i}" style="--tc:${t.color}"><b>${i + 1}</b> ${m.name}<small>${t.icon} ${m.power ? m.power : 'status'}</small></button>`;
+        const combo = mate && m.power && MOVES_POWER(mate) ? findCombo(m.type, mate.ct) : null;
+        return `<button class="bmove ${combo ? 'combo' : ''}" data-move="${i}" style="--tc:${t.color}"><b>${i + 1}</b> ${m.name}<small>${t.icon} ${m.power ? m.power : 'status'}${combo ? ` · ✨ ${combo.name}!` : ''}</small></button>`;
       }).join('');
     } else if (battle.phase === 'choose') {
       const waiting = battle.allies.filter((a) => !a.chose && a.hp > 0).map((a) => a.ownerName);

@@ -109,6 +109,29 @@ export class BattleView {
         if (r.status) g.fx.puff(hit, color, 14);
       }, 230);
     }
+    if (ev.combo) {
+      const cols = ev.types.map((t) => new THREE.Color(TYPES[t].color).getHex());
+      for (const k of ev.pair) this.anims.push({ who: k, kind: 'hit', t: 0, dur: 0.5, dir: new THREE.Vector3(0, 0, 0) });
+      g.hud.banner(`💥 ${ev.combo}!`, 'Co-op combo attack', TYPES[ev.types[0]].color);
+      g.audio.play('chime'); g.audio.play('knock');
+      g.player.shake = 1.2;
+      ev.hits.forEach((h, i) => {
+        const tgt = this._find(h.t);
+        if (!tgt) return;
+        const base = tgt.root.position.clone().add(new THREE.Vector3(0, tgt.height * 0.55, 0));
+        for (let w = 0; w < 4; w++) {
+          setTimeout(() => {
+            g.fx.puff(base.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2)), cols[w % 2], 22);
+            g.fx.sparkle(base, cols[(w + 1) % 2], 18);
+          }, 120 * w + i * 60);
+        }
+        setTimeout(() => {
+          this.anims.push({ who: h.t, kind: 'hit', t: 0, dur: 0.6, dir: new THREE.Vector3(1, 0, 0) });
+          this._text(base.clone().add(new THREE.Vector3(0, 0.5, 0)), String(h.dmg), '#ffd166');
+          g.audio.play('splash');
+        }, 450);
+      });
+    }
     if (ev.burn) {
       const t = this._find(ev.a);
       if (t) { const p = t.root.position.clone().add(new THREE.Vector3(0, t.height * 0.6, 0)); g.fx.puff(p, 0xff6b1a, 10); this._text(p, String(ev.burn), '#ff9b5a'); }

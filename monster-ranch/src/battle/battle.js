@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { SPECIES_BY_ID } from '../data/creatures.js';
 import { MOVES } from '../data/moves.js';
-import { TYPES } from '../data/types.js';
+import { TYPES, findCombo, effectiveness } from '../data/types.js';
 import { useMove, pickWildMove, stat, xpReward, grantXp } from './rules.js';
 
 const ACT_DELAY = 1.25;
@@ -95,6 +95,16 @@ class Battle {
       acts.push({ b: f, move: pickWildMove(f, target), target });
     }
     acts.sort((x, y) => ((MOVES[y.move].priority || 0) - (MOVES[x.move].priority || 0)) || (stat(y.b, 'spd') - stat(x.b, 'spd')) || (Math.random() - 0.5));
+    // co-op combo: two different rancher's creatures using a combo pair of types this turn
+    const owned = aliveAllies.filter((a) => a.choice);
+    if (owned.length >= 2 && owned[0].owner !== owned[1].owner) {
+      const t1 = MOVES[owned[0].choice].type, t2 = MOVES[owned[1].choice].type;
+      const combo = findCombo(t1, t2);
+      if (combo && MOVES[owned[0].choice].power && MOVES[owned[1].choice].power) {
+        const last = Math.max(acts.findIndex((x) => x.b === owned[0]), acts.findIndex((x) => x.b === owned[1]));
+        acts.splice(last + 1, 0, { combo, pair: [owned[0], owned[1]], types: [t1, t2] });
+      }
+    }
     this.queue = acts;
     this.phase = 'act';
     this.timer = 0.4;
@@ -117,7 +127,30 @@ class Battle {
     return pool.find((x) => x.inst.hp > 0);
   }
 
+  _doCombo(act) {
+    const [a, b] = act.pair;
+    if (a.inst.hp <= 0 || b.inst.hp <= 0) { this.timer = 0; return; }
+    const foes = this.foes.filter((f) => f.inst.hp > 0);
+    if (!foes.length) { this.timer = 0; return; }
+    const L = (a.inst.level + b.inst.level) / 2;
+    const atk = (stat(a, 'atk') + stat(b, 'atk')) / 2;
+    const hits = [];
+    for (const f of foes) {
+      const ft = SPECIES_BY_ID[f.inst.species].type;
+      const eff = Math.max(effectiveness(act.types[0], ft), effectiveness(act.types[1], ft));
+      let dmg = (((2 * L) / 5 + 2) * act.combo.power * (atk / Math.max(1, stat(f, 'def')))) / 50 + 2;
+      dmg = Math.max(1, Math.floor(dmg * eff * (0.9 + Math.random() * 0.1)));
+      f.inst.hp = Math.max(0, f.inst.hp - dmg);
+      hits.push({ t: f.key, dmg, eff });
+    }
+    this._emit({ combo: act.combo.name, types: act.types, pair: [a.key, b.key], hits,
+      text: `💥 COMBO! ${nameOf(a.inst)} and ${nameOf(b.inst)} unleash ${act.combo.name}!` });
+    for (const f of foes) if (f.inst.hp <= 0) this._faint(f);
+    this.timer = ACT_DELAY + 0.8;
+  }
+
   _doAction(act) {
+    if (act.combo) { this._doCombo(act); return; }
     const b = act.b;
     if (b.inst.hp <= 0 || (!this.allies.includes(b) && !this.foes.includes(b))) { this.timer = 0; return; }
     const tgt = this._retarget(act);
@@ -165,6 +198,8 @@ class Battle {
       for (const a of this.allies) {
         if (a.inst.hp <= 0) continue;
         const lv = grantXp(a.inst, xp);
+        a.inst.happiness = Math.min(100, (a.inst.happiness ?? 70) + 2);
+        if (lv) this.game.queueEvolution(a.inst, a.actor);
         a.actor.toast(`${nameOf(a.inst)} gained ${xp} XP!`, 'good');
         if (lv) {
           this.say(`${nameOf(a.inst)} grew to Lv ${a.inst.level}!`);
@@ -218,6 +253,7 @@ class Battle {
     const ally = (a) => ({
       key: a.key, owner: a.owner, ownerName: a.actor.name, sp: a.inst.species, lvl: a.inst.level, shiny: a.inst.shiny,
       name: nameOf(a.inst), hp: a.inst.hp, max: a.inst.stats.hp, status: a.status, moves: a.inst.moves, chose: !!a.choice,
+      ct: a.choice ? MOVES[a.choice].type : null,
       x: +a.pos.x.toFixed(2), y: +a.pos.y.toFixed(2), z: +a.pos.z.toFixed(2), yaw: +a.yaw.toFixed(2),
     });
     const foe = (f) => ({ key: f.key, nid: f.nid, sp: f.inst.species, lvl: f.inst.level, name: nameOf(f.inst), hp: f.inst.hp, max: f.inst.stats.hp, status: f.status });

@@ -22,7 +22,7 @@ export class BuildMode {
     this.el = h(`<div class="build-ui hidden">
       <div class="build-title">🔨 Build Mode <span class="build-why"></span></div>
       <div class="build-list"></div>
-      <div class="build-hint"><b>1-8</b>/wheel choose · <b>R</b> rotate · <b>Click</b> place · <b>X</b> demolish (aim at it) · <b>B</b> exit</div>
+      <div class="build-hint"><b>1-0</b>/wheel choose · <b>R</b> rotate · <b>Click</b> place · <b>X</b> demolish (aim at it) · <b>B</b> exit</div>
     </div>`);
     root.appendChild(this.el);
     this.list = this.el.querySelector('.build-list');
@@ -45,7 +45,7 @@ export class BuildMode {
       const b = BUILDINGS[id];
       const afford = Object.entries(b.cost).every(([k, n]) => (inv[k] || 0) >= n);
       return `<div class="build-item ${i === this.sel ? 'sel' : ''} ${afford ? '' : 'poor'}" title="${b.desc}">
-        <div class="bi-key">${i + 1}</div><div class="bi-icon">${b.icon}</div><div class="bi-name">${b.name}</div><div class="bi-cost">${costText(b.cost)}</div></div>`;
+        <div class="bi-key">${i < 10 ? (i + 1) % 10 : ''}</div><div class="bi-icon">${b.icon}</div><div class="bi-name">${b.name}</div><div class="bi-cost">${costText(b.cost)}</div></div>`;
     }).join('');
   }
 
@@ -82,7 +82,7 @@ export class BuildMode {
     if (!this.active) return;
     const g = this.game;
     if (g.player.zone !== 'ranch' || g.inBattle) { this.toggle(false); return; }
-    for (let i = 0; i < BUILD_ORDER.length; i++) if (input.wasPressed('Digit' + (i + 1))) { this.sel = i; this.render(); g.audio.play('ui'); }
+    for (let i = 0; i < Math.min(10, BUILD_ORDER.length); i++) if (input.wasPressed('Digit' + ((i + 1) % 10))) { this.sel = i; this.render(); g.audio.play('ui'); }
     if (input.wheel) { this.sel = (this.sel + input.wheel + BUILD_ORDER.length) % BUILD_ORDER.length; this.render(); g.audio.play('ui'); }
     if (input.wasPressed('KeyR')) { this.rot = (this.rot + Math.PI / 4) % (Math.PI * 2); g.audio.play('ui'); }
     const type = BUILD_ORDER[this.sel];

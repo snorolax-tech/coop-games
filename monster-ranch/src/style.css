@@ -243,3 +243,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .hold-ring i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(#ff8fb8 var(--p, 0%), rgba(255,255,255,.15) 0); -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); }
 .version { margin-top: 12px; font-size: 11.5px; opacity: .7; }
 .version b { letter-spacing: 1px; }
+.bmove.combo { box-shadow: 0 0 0 3px #ffd166, 0 0 14px #ffd166; animation: comboPulse 1s infinite; }
+@keyframes comboPulse { 50% { box-shadow: 0 0 0 3px #ff9e00, 0 0 22px #ff9e00; } }
+.build-list { grid-template-columns: repeat(11, 1fr) !important; }
+.bi-name { font-size: 11px !important; }
+.role-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.role-tag { font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: #ffd6e8; }
+.role-tag.train { background: #cdeffd; }

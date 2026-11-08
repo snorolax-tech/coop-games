@@ -2,7 +2,8 @@
 // The host owns the list (place / demolish requests from either rancher) and both
 // clients rebuild meshes from it.
 import * as THREE from 'three';
-import { BUILDINGS } from '../data/buildings.js';
+import { BUILDINGS, HATCH_TIME } from '../data/buildings.js';
+import { TYPES } from '../data/types.js';
 import { HUB_R } from '../world/zones.js';
 import { G } from '../world/props.js';
 import { SPECIES_BY_ID } from '../data/creatures.js';
@@ -104,6 +105,51 @@ export function buildModel(type) {
         const a = i * 1.6;
         mesh(G.ico, M(i % 2 ? '#ffb7d5' : '#ffc9e0'), g, Math.sin(a) * (i ? 0.7 : 0), 2.7 + (i ? 0.2 : 0.5), Math.cos(a) * (i ? 0.7 : 0), i ? 1.5 : 2);
       }
+      break;
+    }
+    case 'breeder': {
+      mesh(new THREE.CircleGeometry(1, 20), M('#ffd6e8'), g, 0, 0.04, 0, 3.4).rotation.x = -Math.PI / 2;
+      const post = M('#ff8fb8'), rail = M('#ffffff');
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        if (Math.abs(Math.sin(a)) < 0.25 && Math.cos(a) > 0) continue; // gate gap facing +z
+        mesh(G.box, post, g, Math.sin(a) * 3.5, 0.5, Math.cos(a) * 3.5, 0.18, 1, 0.18);
+      }
+      const ring = mesh(new THREE.TorusGeometry(3.5, 0.06, 4, 40, Math.PI * 1.8), rail, g, 0, 0.85, 0, 1);
+      ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 2 + 0.31;
+      mesh(G.sphere, M('#f2d27a'), g, 0, 0.25, -0.5, 1.8, 0.45, 1.5); // nest
+      // heart sign
+      const heart = new THREE.Group(); heart.position.set(0, 2.4, -3.4); g.add(heart);
+      const hm = M('#ff4d8d', { emissive: 0x661030 });
+      mesh(G.sphere, hm, heart, -0.22, 0.1, 0, 0.32, 0.32, 0.12);
+      mesh(G.sphere, hm, heart, 0.22, 0.1, 0, 0.32, 0.32, 0.12);
+      const tip = mesh(G.cone, hm, heart, 0, -0.25, 0, 0.42, 0.55, 0.12); tip.rotation.z = Math.PI;
+      mesh(G.cyl, M('#8b5a2b'), g, 0, 1.1, -3.45, 0.08, 2.2, 0.08);
+      break;
+    }
+    case 'incubator': {
+      mesh(G.box, M('#e0e0ea'), g, 0, 0.5, 0, 1.6, 1, 1.4);
+      mesh(G.box, M('#ffb347'), g, 0, 1.02, 0, 1.4, 0.06, 1.2);
+      const dome = mesh(G.sphere, M('#cdeffd', { transparent: true, opacity: 0.45 }), g, 0, 1.05, 0, 0.75, 0.6, 0.65);
+      dome.userData.noHighlight = true;
+      const warm = mesh(G.sphere, M('#ffcf70', { emissive: 0xff9a30, emissiveIntensity: 0.4 }), g, 0, 1.12, 0, 0.12);
+      warm.name = 'warm';
+      const slot = new THREE.Group(); slot.name = 'eggSlot'; slot.position.y = 1.25; g.add(slot);
+      mesh(G.box, M('#3d405b'), g, 0.55, 0.65, 0.71, 0.3, 0.2, 0.02);
+      break;
+    }
+    case 'trainyard': {
+      mesh(new THREE.CircleGeometry(1, 24), M('#e9c46a'), g, 0, 0.04, 0, 4.4).rotation.x = -Math.PI / 2;
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        mesh(G.dodec, M('#a2a2ad'), g, Math.sin(a) * 4.5, 0.12, Math.cos(a) * 4.5, 0.35, 0.22, 0.35);
+      }
+      for (const [x, z] of [[-2.2, -1.8], [2.2, -1.8]]) {
+        mesh(G.cyl, M('#8b5a2b'), g, x, 0.9, z, 0.12, 1.8, 0.12);
+        mesh(G.sphere, M('#f2d27a'), g, x, 1.5, z, 0.45, 0.6, 0.45);
+        mesh(G.sphere, M('#ef476f'), g, x, 1.55, z + 0.35, 0.18, 0.18, 0.05);
+      }
+      const log = mesh(G.cyl, M('#9a6334'), g, 0, 0.3, 1.6, 0.3, 2.6, 0.3); log.rotation.z = Math.PI / 2;
       break;
     }
     case 'statue': {
@@ -228,6 +274,21 @@ export class Buildings {
       case 'bench': e.colliders.push(col.box(e.x, e.z, 1.1, 0.32, e.rot, y + 0.56)); break;
       case 'sapling': e.colliders.push(col.circle(e.x, e.z, 0.35, y + 4)); break;
       case 'statue': e.colliders.push(col.box(e.x, e.z, 0.8, 0.8, e.rot, y + 1.07)); break;
+      case 'incubator': e.colliders.push(col.box(e.x, e.z, 0.8, 0.7, e.rot, y + 1.05)); break;
+      case 'trainyard':
+        for (const [lx, lz] of [[-2.2, -1.8], [2.2, -1.8]]) { const [x, z] = at(lx, lz); e.colliders.push(col.circle(x, z, 0.4, y + 2)); }
+        break;
+      case 'breeder': {
+        // ring fence with a gap at the front (+z)
+        for (let i = 0; i < 14; i++) {
+          const a0 = (i / 14) * Math.PI * 2, a1 = ((i + 1) / 14) * Math.PI * 2;
+          const mid = (a0 + a1) / 2;
+          if (Math.abs(Math.sin(mid)) < 0.3 && Math.cos(mid) > 0) continue;
+          const [ax, az] = at(Math.sin(a0) * 3.5, Math.cos(a0) * 3.5), [bx, bz] = at(Math.sin(a1) * 3.5, Math.cos(a1) * 3.5);
+          e.colliders.push(col.segment(ax, az, bx, bz, 0.15, y + 1));
+        }
+        break;
+      }
     }
     const def = BUILDINGS[e.type];
     e.interact = g.interactions.add({
@@ -252,6 +313,12 @@ export class Buildings {
   subtitle(e) {
     const g = this.game;
     if (e.type === 'trough') return `Food ${e.food}/10   —   E  Fill with berries`;
+    if (e.type === 'incubator') {
+      if (e.egg) return `Warming an egg… ${Math.min(99, Math.floor((e.hatchT || 0) / HATCH_TIME * 100))}%`;
+      return (g.eggs?.length ? `E  Place your egg (${g.eggs.length} carried)` : 'Empty — bring an egg from the Breeding Pen');
+    }
+    if (e.type === 'breeder') return g.ranchSim ? g.ranchSim.breedStatus(e) : '';
+    if (e.type === 'trainyard') return g.ranchSim ? `${g.ranchSim.trainees().length}/4 training · assign creatures in the Barn` : '';
     if (e.type === 'pen') {
       const n = g.ranchSim ? g.ranchSim.inPen(e.id) : 0;
       return `${n}/4 creatures  ·  Barn (E) to move creatures here`;
@@ -261,6 +328,7 @@ export class Buildings {
   }
 
   use(actor, e) {
+    if (e.type === 'incubator') { this.game.ranchSim.incubate(actor, e); return; }
     if (e.type !== 'trough') return;
     const inv = actor.inventory;
     const space = 10 - e.food;
@@ -283,23 +351,74 @@ export class Buildings {
     food.children.forEach((b, i) => { b.visible = i < e.food; });
   }
 
-  update(night) {
+  update(night, dt = 0) {
     lampMat.emissiveIntensity = 0.2 + night * 1.6;
+    this._t = (this._t || 0) + dt;
+    for (const e of this.map.values()) {
+      if (e.type !== 'incubator') continue;
+      const warm = e.group.getObjectByName('warm');
+      if (warm) warm.material.emissiveIntensity = e.egg ? 0.6 + Math.sin(this._t * 3) * 0.3 : 0.15;
+      const slot = e.group.getObjectByName('eggSlot');
+      if (slot && slot.children[0]) slot.children[0].rotation.z = e.egg && (e.hatchT || 0) > HATCH_TIME * 0.7 ? Math.sin(this._t * 18) * 0.15 : 0;
+    }
   }
 
-  serialize() { return [...this.map.values()].map((e) => ({ id: e.id, type: e.type, x: +e.x.toFixed(2), z: +e.z.toFixed(2), rot: +e.rot.toFixed(3), food: e.food })); }
+  _showEgg(e) {
+    if (e.type !== 'incubator') return;
+    const slot = e.group.getObjectByName('eggSlot');
+    if (!slot) return;
+    const has = !!e.egg;
+    if (has && !slot.children.length) slot.add(makeEggMesh(e.egg.species));
+    if (!has) slot.clear();
+  }
+
+  serialize() {
+    return [...this.map.values()].map((e) => ({
+      id: e.id, type: e.type, x: +e.x.toFixed(2), z: +e.z.toFixed(2), rot: +e.rot.toFixed(3), food: e.food,
+      egg: e.egg || null, hatchT: Math.round(e.hatchT || 0), owner: e.owner || null, breedT: Math.round(e.breedT || 0),
+    }));
+  }
 
   /** Rebuild from a list (load / guest sync). */
   apply(list) {
     const keep = new Set(list.map((b) => b.id));
     for (const e of [...this.map.values()]) if (!keep.has(e.id)) this._remove(e);
     for (const b of list) {
-      const e = this.map.get(b.id);
-      if (!e) this._create({ ...b });
+      let e = this.map.get(b.id);
+      if (!e) { this._create({ ...b }); e = this.map.get(b.id); }
       else if (e.food !== b.food) { e.food = b.food; this._showFood(e); }
+      e.hatchT = b.hatchT || 0; e.breedT = b.breedT || 0; e.owner = b.owner || null;
+      const hadEgg = !!e.egg;
+      e.egg = b.egg || null;
+      if (hadEgg !== !!e.egg) { const slot = e.group.getObjectByName('eggSlot'); slot?.clear(); }
+      this._showEgg(e);
       this.nextId = Math.max(this.nextId, b.id + 1);
     }
   }
+
+  first(type) { return [...this.map.values()].find((e) => e.type === type) || null; }
+}
+
+/** A speckled egg tinted by the baby's type. */
+export function makeEggMesh(speciesId) {
+  const sp = SPECIES_BY_ID[speciesId];
+  const col = sp ? TYPES[sp.type].color : '#ffffff';
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), new THREE.MeshLambertMaterial({ color: '#fff7e6' }));
+  shell.scale.set(1, 1.3, 1);
+  g.add(shell);
+  const spotMat = new THREE.MeshLambertMaterial({ color: col });
+  for (let i = 0; i < 7; i++) {
+    const a = i * 2.4, yy = -0.2 + (i % 4) * 0.13;
+    const r = Math.sqrt(Math.max(0, 1 - (yy / 0.36) ** 2)) * 0.28;
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), spotMat);
+    s.position.set(Math.cos(a) * r, yy, Math.sin(a) * r);
+    s.scale.set(1, 1, 0.4);
+    s.lookAt(0, yy, 0);
+    g.add(s);
+  }
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
 }
 
 export function costText(cost) {

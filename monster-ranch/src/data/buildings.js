@@ -9,9 +9,17 @@ export const BUILDINGS = {
   bench:   { name: 'Bench',          icon: '🪑', kind: 'decor',  r: 1.3, cost: { wood: 8 }, desc: 'Decoration. A nice spot to watch your creatures.' },
   sapling: { name: 'Blossom Tree',   icon: '🌸', kind: 'decor',  r: 1.4, cost: { coins: 8, wood: 2, flower: 2 }, desc: 'Decoration. Pretty pink blossoms.' },
   statue:  { name: 'Creature Statue',icon: '🗿', kind: 'decor',  r: 1.3, cost: { coins: 25, stone: 10 }, desc: 'Decoration. A proud statue of a creature.' },
+  breeder: { name: 'Breeding Pen',   icon: '💞', kind: 'special', r: 3.8, cost: { coins: 60, wood: 15, stone: 5 }, desc: 'Put two compatible, happy ranch creatures here (Barn) and they\'ll lay an egg.' },
+  incubator:{ name: 'Incubator',     icon: '🥚', kind: 'special', r: 1.4, cost: { coins: 40, stone: 5, battery: 1 }, desc: 'Bring an egg here (E) to keep it warm until it hatches.' },
+  trainyard:{ name: 'Training Yard', icon: '🏋️', kind: 'special', r: 4.6, cost: { coins: 35, wood: 12 }, desc: 'Ranch creatures assigned here (Barn) gain XP over time.' },
 };
 
-export const BUILD_ORDER = ['pen', 'trough', 'pond', 'flowers', 'lamp', 'bench', 'sapling', 'statue'];
+export const BUILD_ORDER = ['pen', 'trough', 'pond', 'flowers', 'lamp', 'bench', 'sapling', 'statue', 'breeder', 'incubator', 'trainyard'];
+
+export const BREED_TIME = 150;   // seconds for a compatible pair to lay an egg
+export const HATCH_TIME = 120;   // seconds in the incubator
+export const TRAIN_TICK = 20;    // seconds between training XP gains
+export const MAX_TRAINEES = 4;
 
 // What happy ranch creatures produce, by type.
 export const PRODUCE = {

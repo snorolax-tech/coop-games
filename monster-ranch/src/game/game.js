@@ -27,7 +27,7 @@ import { BattleView } from '../battle/view.js';
 import { BattleHUD } from '../ui/battle.js';
 import { StarterPicker } from '../ui/starter.js';
 import { Catching } from '../catching/catching.js';
-import { createCreature } from '../creatures/instance.js';
+import { createCreature, calcStats } from '../creatures/instance.js';
 import { STARTERS } from '../ui/starter.js';
 import { ratingPoints, ratingInfo } from './rating.js';
 import { Buildings } from '../ranch/buildings.js';
@@ -75,6 +75,8 @@ export class Game {
     this.net = new Net();
     this.inventory = newInventory();
     this.party = [];   // my creatures (max 6)
+    this.eggs = [];    // eggs I'm carrying (max 3)
+    this.pendingEvo = [];
     this.ranch = [];   // shared ranch storage (host) — creatures that didn't fit in a party
     this.stats = { wins: 0 };
     this.rating = { level: 0, points: 0, breakdown: [] };
@@ -92,6 +94,8 @@ export class Game {
       get name() { return game.profile.name; },
       get inventory() { return game.inventory; },
       get party() { return game.party; },
+      get eggs() { return game.eggs; },
+      set eggs(v) { game.eggs = v; },
       held: () => game.items.current.id,
       give: (item, n, quiet) => this.give(item, n, quiet),
       toast: (msg, kind) => this.toast(msg, kind),
@@ -187,7 +191,7 @@ export class Game {
       if (saved.orb !== undefined) saved = { inv: saved, party: [] }; // old save format
       const inv = { ...newInventory(), ...(saved.inv || {}) };
       const actor = {
-        id: 'guest', name, inventory: inv, party: saved.party || [],
+        id: 'guest', name, inventory: inv, party: saved.party || [], eggs: saved.eggs || [],
         held: () => HOTBAR[this.remote?.item]?.id,
         give: (item, n, quiet) => { inv[item] = (inv[item] || 0) + n; net.send({ t: 'give', item, n, quiet: !!quiet, inv }); },
         toast: (msg, kind) => net.send({ t: 'toast', msg, kind }),
@@ -268,7 +272,7 @@ export class Game {
     net.on('snd', (m) => this._playSound(m.n, v3(m.p), m.k));
     net.on('landmark', (m) => this.landmarks.add(m.id));
     net.on('rating', (m) => { this.rating = m.r; this.hud.setRating(this.rating); if (this.panel.open) this.panel.render(); });
-    net.on('party', (m) => { this.party = m.party; this.ranchCount = m.ranch; this._partyUpdated(); });
+    net.on('party', (m) => { this.party = m.party; this.ranchCount = m.ranch; this.eggs = m.eggs || []; this._partyUpdated(); });
     net.on('bstate', (m) => this.battleView.apply(m.list));
     net.on('bev', (m) => this._onBattleEvent(m.ev));
     net.on('catch', (m) => this.battleView.playCatch(m.ev));
@@ -286,7 +290,7 @@ export class Game {
       if (!this.guestActor) return; // e.g. a rejected join attempt
       if (this.guestActor) {
         this.battles.run(this.guestActor);
-        this.guestSaves[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party };
+        this.guestSaves[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party, eggs: this.guestActor.eggs };
       }
       const name = this.remote?.name || 'Your friend';
       this._removeRemote();
@@ -418,7 +422,7 @@ export class Game {
   _ranchMsg() {
     return {
       b: this.buildings.serialize(), st: this.ranchSim.state(), cap: this.ranchCapacity(),
-      list: this.ranch.map((c) => ({ uid: c.uid, species: c.species, level: c.level, shiny: c.shiny, nickname: c.nickname, happiness: Math.round(c.happiness ?? 70) })),
+      list: this.ranch.map((c) => ({ uid: c.uid, species: c.species, level: c.level, shiny: c.shiny, nickname: c.nickname, happiness: Math.round(c.happiness ?? 70), role: c.role || null, xp: c.xp })),
     };
   }
 
@@ -458,6 +462,25 @@ export class Game {
 
   _ranchMove(actor, uid, act) {
     if (this.battles.battleOf(actor.id)) { actor.toast('Finish your battle first!', 'muted'); return; }
+    if (act === 'breed' || act === 'train' || act === 'free') {
+      const c = this.ranch.find((x) => x.uid === uid);
+      if (!c) return;
+      if (act === 'free') { c.role = null; actor.toast(`${this.creatureName(c)} is back to normal ranch life`, 'muted'); }
+      else if (act === 'breed') {
+        if (!this.buildings.first('breeder')) { actor.toast('Build a Breeding Pen first (B).', 'muted'); return; }
+        if (this.ranchSim.breeders().length >= 2) { actor.toast('The Breeding Pen already has two creatures.', 'muted'); return; }
+        c.role = 'breed'; actor.toast(`${this.creatureName(c)} moved into the Breeding Pen 💞`, 'good');
+      } else {
+        if (!this.buildings.first('trainyard')) { actor.toast('Build a Training Yard first (B).', 'muted'); return; }
+        if (this.ranchSim.trainees().length >= 4) { actor.toast('The Training Yard is full (4).', 'muted'); return; }
+        c.role = 'train'; actor.toast(`${this.creatureName(c)} started training 💪`, 'good');
+      }
+      // roles need a visible spot on the ranch: move it to the front of the list
+      const i = this.ranch.indexOf(c);
+      if (c.role && i >= this.ranchSim.capacity) { this.ranch.splice(i, 1); this.ranch.unshift(c); }
+      this.ranchChanged();
+      return;
+    }
     if (act === 'toRanch') {
       if (actor.party.length <= 1) { actor.toast('Keep at least one partner with you.', 'muted'); return; }
       const i = actor.party.findIndex((c) => c.uid === uid);
@@ -470,6 +493,7 @@ export class Game {
       const i = this.ranch.findIndex((c) => c.uid === uid);
       if (i < 0) return;
       const [c] = this.ranch.splice(i, 1);
+      c.role = null;
       actor.party.push(c);
       actor.toast(`${this.creatureName(c)} joined your party 🐾`, 'good');
     }
@@ -490,6 +514,53 @@ export class Game {
   requestDemolish(id) {
     if (this.isGuest) this.net.send({ t: 'demolish', id });
     else this.buildings.demolish(this.local, id);
+  }
+
+  // --- evolution ---------------------------------------------------------------------------
+
+  /** Host: check this creature for evolution soon (not mid-battle). actor may be null. */
+  queueEvolution(inst, actor) {
+    if (!this.pendingEvo.some((p) => p.inst === inst)) this.pendingEvo.push({ inst, actor });
+  }
+
+  _ownerOf(inst) {
+    if (this.party.includes(inst)) return this.local;
+    if (this.guestActor?.party.includes(inst)) return this.guestActor;
+    return null;
+  }
+
+  _processEvolutions() {
+    if (!this.pendingEvo.length) return;
+    const busy = new Set();
+    for (const b of this.battles.battles.values()) for (const a of b.allies) busy.add(a.inst);
+    this.pendingEvo = this.pendingEvo.filter(({ inst, actor }) => {
+      if (busy.has(inst)) return true;
+      this._tryEvolve(inst, actor || this._ownerOf(inst));
+      return false;
+    });
+  }
+
+  _tryEvolve(inst, actor) {
+    const sp = SPECIES_BY_ID[inst.species];
+    const ev = sp.evolve;
+    if (!ev) return;
+    if (ev.level && inst.level < ev.level) return;
+    if (ev.happiness && (inst.happiness ?? 0) < ev.happiness) return;
+    const to = SPECIES_BY_ID[ev.to];
+    const lost = inst.stats.hp - inst.hp;
+    inst.species = to.id;
+    inst.stats = calcStats(to, inst.level);
+    inst.hp = Math.max(1, inst.stats.hp - lost);
+    // keep any inherited move in the last slot, learn the rest of the new form's moves
+    const inherited = inst.moves[3] && !sp.moves.includes(inst.moves[3]) ? inst.moves[3] : null;
+    inst.moves = [...to.moves];
+    if (inherited && !inst.moves.includes(inherited)) inst.moves[3] = inherited;
+    this.markCaught(to.id);
+    this.sharedBanner(`✨ ${sp.name} evolved into ${to.name}!`, actor ? `${actor.name}'s partner looks bigger and cooler!` : 'Your ranch creature looks bigger and cooler!', TYPES[to.type].color, 'chime');
+    const where = actor === this.guestActor && this.remote ? this.remote.target : this.player.pos;
+    this.worldFx('sparkle', where.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xffe066);
+    if (actor) this.partyChanged(actor);
+    this.ranchChanged();
   }
 
   // --- ranch rating ----------------------------------------------------------------------
@@ -584,7 +655,7 @@ export class Game {
 
   /** Host: an actor's party changed — refresh my UI or tell the guest. */
   partyChanged(actor) {
-    if (actor?.id === 'guest') this.net.send({ t: 'party', party: actor.party, ranch: this.ranch.length });
+    if (actor?.id === 'guest') this.net.send({ t: 'party', party: actor.party, ranch: this.ranch.length, eggs: actor.eggs || [] });
     else this._partyUpdated();
   }
 
@@ -804,6 +875,8 @@ export class Game {
     this.landmarks = new Set(d?.landmarks || []);
     this.guestSaves = d?.guests || {};
     this.party = d?.party || [];
+    this.eggs = d?.eggs || [];
+    this.pendingEvo = [];
     this.ranch = d?.ranch || [];
     this.battles.clear();
     this.battleView.clear();
@@ -830,11 +903,12 @@ export class Game {
 
   serialize() {
     const guests = { ...this.guestSaves };
-    if (this.guestActor) guests[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party };
+    if (this.guestActor) guests[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party, eggs: this.guestActor.eggs };
     return {
       profile: this.profile,
       inventory: this.inventory,
       party: this.party,
+      eggs: this.eggs,
       ranch: this.ranch,
       guests,
       unlocked: [...this.unlocked],
@@ -1026,8 +1100,9 @@ export class Game {
       if (input.wasPressed('KeyR')) this.requestRun();
     }
     this.ranchSim.update(dt);
-    this.buildings.update(this.world.sky.night);
+    this.buildings.update(this.world.sky.night, dt);
     if (this.isAuthority) {
+      this._processEvolutions();
       this._flushRanch();
       if (this._saveSoon > 0) { this._saveSoon -= dt; if (this._saveSoon <= 0) this.save(); }
     }

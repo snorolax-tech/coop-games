@@ -59,7 +59,7 @@ export const SPECIES = [
   // ---------------- Leaf ----------------
   { id: 'sproutle', name: 'Sproutle', type: 'leaf', rarity: 'common', personality: 'playful',
     base: { hp: 45, atk: 45, def: 50, spd: 45 }, moves: ['leafflick', 'tackle', 'sporepuff', 'vinewhip'],
-    evolve: { to: 'bloomguard', happiness: 180 }, habitat: ['meadow', 'forest'], time: 'day',
+    evolve: { to: 'bloomguard', happiness: 90 }, habitat: ['meadow', 'forest'], time: 'day',
     desc: 'The sprout on its head turns to follow the sun.',
     model: { plan: 'biped', size: 0.7, body: '#95d5b2', belly: '#fefae0', accent: '#52b788', features: ['sprout', 'cheeks'] } },
   { id: 'bloomguard', name: 'Bloomguard', type: 'leaf', rarity: 'uncommon', personality: 'lazy',

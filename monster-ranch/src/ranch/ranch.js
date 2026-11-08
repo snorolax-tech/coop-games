@@ -6,7 +6,12 @@ import * as THREE from 'three';
 import { SPECIES_BY_ID, SPECIES } from '../data/creatures.js';
 import { TYPES, PERSONALITIES } from '../data/types.js';
 import { ITEMS } from '../data/items.js';
-import { PRODUCE, PEN_CAPACITY, RANCH_BASE_CAPACITY } from '../data/buildings.js';
+import { PRODUCE, PEN_CAPACITY, RANCH_BASE_CAPACITY, BREED_TIME, HATCH_TIME, TRAIN_TICK, MAX_TRAINEES } from '../data/buildings.js';
+import { CHART, findCombo } from '../data/types.js';
+import { MOVES } from '../data/moves.js';
+import { createCreature } from '../creatures/instance.js';
+import { grantXp } from '../battle/rules.js';
+import { makeEggMesh } from './buildings.js';
 import { HUB_R } from '../world/zones.js';
 import { Colliders } from '../world/colliders.js';
 import { angDiff } from '../core/noise.js';
@@ -255,8 +260,10 @@ export class RanchSim {
     this.nextRid = 1;
     this.drops = [];            // { id, item, n, x, y, z }
     this.messes = [];           // { id, penId, x, z }
+    this.eggs = [];             // { id, x, y, z, egg }
     this.dropViews = new Map();
     this.messViews = new Map();
+    this.eggViews = new Map();
     this.nextObj = 1;
     this.authority = true;
     this._q = [];
@@ -274,6 +281,13 @@ export class RanchSim {
   }
 
   wanderPoint(c) {
+    const b = this.game.buildings;
+    const role = c.inst.role;
+    const spot = role === 'breed' ? b.first('breeder') : role === 'train' ? b.first('trainyard') : null;
+    if (spot) {
+      const r = role === 'breed' ? 2.2 : 3.4, a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * r;
+      return new THREE.Vector3(spot.x + Math.sin(a) * d, 0, spot.z + Math.cos(a) * d);
+    }
     if (c.penId != null) {
       const pen = this.game.buildings.map.get(c.penId);
       if (pen) return this.game.buildings.penPoint(pen, Math.random() * 2 - 1, Math.random() * 2 - 1);
@@ -325,6 +339,13 @@ export class RanchSim {
     }
     for (const inst of visible) {
       ensureNeeds(inst);
+      // evolved since its model was built? rebuild it
+      const existing = this.creatures.get(this.byUid.get(inst.uid));
+      if (existing && existing.sp.id !== inst.species) {
+        existing.dispose();
+        this.creatures.delete(existing.rid);
+        this.byUid.delete(inst.uid);
+      }
       if (this.byUid.has(inst.uid)) continue;
       const rid = this.nextRid++;
       const c = new RanchCreature(this, rid, inst);
@@ -332,10 +353,23 @@ export class RanchSim {
       this.byUid.set(inst.uid, rid);
       g.fx.sparkle(c.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xffffff, 10);
     }
+    // special roles: hop into the breeding pen / training yard
+    for (const c of this.creatures.values()) {
+      const role = c.inst.role;
+      const spot = role === 'breed' ? g.buildings.first('breeder') : role === 'train' ? g.buildings.first('trainyard') : null;
+      if (spot && c.roleAt !== spot.id) {
+        c.roleAt = spot.id; c.penId = null;
+        const p = this.wanderPoint(c);
+        c.pos.set(p.x, g.world.groundY(p.x, p.z), p.z); c.target.copy(c.pos); c.setState('idle', 1);
+        g.worldFx('sparkle', c.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), 0xff8fb8);
+      }
+      if (!spot) c.roleAt = null;
+    }
     // pen assignment: fill pens in order
     const pens = g.buildings.pens();
     let i = 0;
     for (const c of this.creatures.values()) {
+      if (c.roleAt) continue;
       const pen = pens[Math.floor(i / PEN_CAPACITY)];
       const before = c.penId;
       c.penId = pen ? pen.id : null;
@@ -349,6 +383,128 @@ export class RanchSim {
       }
       i++;
     }
+  }
+
+  // ----- breeding, eggs, incubation, training (host) -----
+
+  breeders() { return this.game.ranch.filter((i) => i.role === 'breed'); }
+  trainees() { return this.game.ranch.filter((i) => i.role === 'train'); }
+
+  /** Can these two have an egg together? Same type, or a pair of types that combo. */
+  compatible(a, b) {
+    if (!a || !b) return 'Needs two creatures';
+    const ta = SPECIES_BY_ID[a.species].type, tb = SPECIES_BY_ID[b.species].type;
+    if (ta !== tb && !findCombo(ta, tb)) return `${TYPES[ta].name} and ${TYPES[tb].name} types don't get along — try the same type or a combo pair`;
+    if ((a.happiness ?? 70) < 50 || (b.happiness ?? 70) < 50) return 'Both need to be happy (♥ 50+)';
+    return '';
+  }
+
+  breedStatus(e) {
+    const g = this.game;
+    const list = g.isGuest ? (g.ranchSummary || []).filter((c) => c.role === 'breed') : this.breeders();
+    if (list.length < 2) return `${list.length}/2 creatures · assign a pair in the Barn`;
+    const why = g.isGuest ? (e.breedT > 0 ? '' : '…') : this.compatible(list[0], list[1]);
+    if (why) return why;
+    return `💞 They're getting along! Egg ${Math.min(99, Math.floor((e.breedT || 0) / BREED_TIME * 100))}%`;
+  }
+
+  _makeEgg(a, b) {
+    const pick = Math.random() < 0.5 ? a : b, other = pick === a ? b : a;
+    let sp = SPECIES_BY_ID[pick.species];
+    while (sp.evolvesFrom) sp = SPECIES_BY_ID[sp.evolvesFrom]; // babies hatch as the first form
+    const otherMoves = other.moves.filter((m) => MOVES[m].power > 0 && !sp.moves.includes(m));
+    const move = otherMoves.length ? otherMoves[Math.floor(Math.random() * otherMoves.length)] : null;
+    const shiny = Math.random() < (a.shiny || b.shiny ? 1 / 8 : 1 / 48);
+    return { species: sp.id, shiny, move, parents: [a.species, b.species] };
+  }
+
+  _updateBreeding(dt) {
+    const g = this.game;
+    const breeder = g.buildings.first('breeder');
+    if (!breeder) return;
+    const [a, b] = this.breeders();
+    if (!a || !b || this.compatible(a, b)) { if (breeder.breedT) { breeder.breedT = 0; g.ranchChanged(); } return; }
+    breeder.breedT = (breeder.breedT || 0) + dt;
+    this._breedSync = (this._breedSync || 0) + dt;
+    if (this._breedSync > 5) { this._breedSync = 0; g.ranchChanged(); }
+    if (breeder.breedT < BREED_TIME) return;
+    breeder.breedT = 0;
+    const egg = this._makeEgg(a, b);
+    const ang = Math.random() * Math.PI * 2;
+    const x = breeder.x + Math.sin(ang) * 1, z = breeder.z + Math.cos(ang) * 1;
+    this.eggs.push({ id: this.nextObj++, x, y: g.world.groundY(x, z) + 0.3, z, egg });
+    g.sharedBanner('🥚 An egg appeared!', 'Pick it up at the Breeding Pen and take it to an Incubator', '#ffd6e8', 'chime');
+    g.ranchChanged();
+  }
+
+  pickUpEgg(actor, id) {
+    const i = this.eggs.findIndex((e) => e.id === id);
+    if (i < 0) return;
+    actor.eggs = actor.eggs || [];
+    if (actor.eggs.length >= 3) { actor.toast('You can only carry 3 eggs.', 'muted'); return; }
+    actor.eggs.push(this.eggs[i].egg);
+    this.eggs.splice(i, 1);
+    actor.toast('🥚 You picked up an egg! Take it to an Incubator (E).', 'good');
+    this.game.partyChanged(actor);
+    this.game.ranchChanged();
+  }
+
+  incubate(actor, inc) {
+    if (inc.egg) { actor.toast(`This egg is ${Math.floor((inc.hatchT || 0) / HATCH_TIME * 100)}% warm. Almost there…`, 'muted'); return; }
+    if (!actor.eggs?.length) { actor.toast('Bring an egg from the Breeding Pen first.', 'muted'); return; }
+    inc.egg = actor.eggs.shift();
+    inc.hatchT = 0;
+    inc.owner = actor.id;
+    this.game.buildings._showEgg(inc);
+    actor.toast('🥚 The egg is snug in the incubator. It will hatch in about 2 minutes.', 'good');
+    this.game.partyChanged(actor);
+    this.game.ranchChanged();
+  }
+
+  _updateIncubators(dt) {
+    const g = this.game;
+    for (const inc of g.buildings.map.values()) {
+      if (inc.type !== 'incubator' || !inc.egg) continue;
+      inc.hatchT = (inc.hatchT || 0) + dt;
+      this._incSync = (this._incSync || 0) + dt;
+      if (this._incSync > 5) { this._incSync = 0; g.ranchChanged(); }
+      if (inc.hatchT < HATCH_TIME) continue;
+      const egg = inc.egg;
+      inc.egg = null; inc.hatchT = 0;
+      g.buildings._showEgg(inc);
+      const baby = createCreature(egg.species, 1, { shiny: egg.shiny });
+      baby.happiness = 80; baby.hunger = 90;
+      if (egg.move) baby.moves[3] = egg.move;
+      const owner = g.actorById(inc.owner) || g.local;
+      const where = g.addCreatureTo(owner, baby);
+      g.markCaught(baby.species);
+      const sp = SPECIES_BY_ID[baby.species];
+      const extra = [baby.shiny && '✨ It\'s a rare shiny!', egg.move && `It inherited ${MOVES[egg.move].name}!`].filter(Boolean).join(' ');
+      g.sharedBanner(`🐣 A baby ${sp.name} hatched!`, `${extra || 'Welcome to the ranch!'} (${where === 'party' ? `joined ${owner.name}'s party` : 'living on the ranch'})`, TYPES[sp.type].color, 'chime');
+      g.worldFx('sparkle', new THREE.Vector3(inc.x, g.world.groundY(inc.x, inc.z) + 1.4, inc.z), baby.shiny ? 0xffe066 : 0xffffff);
+      g.ranchChanged();
+    }
+  }
+
+  _updateTraining(dt) {
+    const g = this.game;
+    const yard = g.buildings.first('trainyard');
+    if (!yard) return;
+    this._trainT = (this._trainT || 0) + dt;
+    if (this._trainT < TRAIN_TICK) return;
+    this._trainT = 0;
+    for (const inst of this.trainees().slice(0, MAX_TRAINEES)) {
+      if ((inst.happiness ?? 70) < 30) continue;
+      const lv = grantXp(inst, 6 + inst.level);
+      inst.hunger = clamp((inst.hunger ?? 80) - 6, 0, 100);
+      const c = this.creatures.get(this.byUid.get(inst.uid));
+      c?.say('💪', 1);
+      if (lv) {
+        g.sharedBanner(`⬆ ${SPECIES_BY_ID[inst.species].name} grew to Lv ${inst.level}!`, 'Training pays off', '#4cc9f0', null);
+        g.queueEvolution(inst, null);
+      }
+    }
+    g.ranchChanged();
   }
 
   produce(c) {
@@ -393,6 +549,14 @@ export class RanchSim {
         use: (actor) => this.collect(actor, o.id) });
       return { root, def, gem: box };
     });
+    sync(this.eggs, this.eggViews, (o) => {
+      const root = makeEggMesh(o.egg.species);
+      root.position.set(o.x, o.y, o.z);
+      g.scene.add(root);
+      const def = g.interactions.add({ id: 'eg:' + o.id, root, name: '🥚 Creature Egg', sub: 'E  Pick up (carry it to an Incubator)', range: 4,
+        use: (actor) => this.pickUpEgg(actor, o.id) });
+      return { root, def };
+    });
     sync(this.messes, this.messViews, (o) => {
       const root = new THREE.Group();
       const mat = new THREE.MeshLambertMaterial({ color: '#7a5230', flatShading: true });
@@ -431,7 +595,14 @@ export class RanchSim {
     const g = this.game;
     const night = g.world.sky.night > 0.5;
     if (this.authority) {
-      for (const c of this.creatures.values()) c.think(dt, night);
+      for (const c of this.creatures.values()) {
+        c.think(dt, night);
+        // happiness evolutions (e.g. Sproutle) happen on the ranch
+        if (SPECIES_BY_ID[c.inst.species].evolve?.happiness && c.inst.happiness >= SPECIES_BY_ID[c.inst.species].evolve.happiness) g.queueEvolution(c.inst, null);
+      }
+      this._updateBreeding(dt);
+      this._updateIncubators(dt);
+      this._updateTraining(dt);
       if (this.dirtyRating) { this._ratingT = (this._ratingT || 0) + dt; if (this._ratingT > 5) { this._ratingT = 0; this.dirtyRating = false; g.updateRating(); } }
     } else {
       for (const c of this.creatures.values()) {
@@ -444,6 +615,7 @@ export class RanchSim {
     for (const c of this.creatures.values()) c.updateView(dt);
     const t = performance.now() / 1000;
     for (const v of this.dropViews.values()) { v.gem.rotation.y = t * 2; v.gem.position.y = 0.5 + Math.sin(t * 3) * 0.08; }
+    for (const v of this.eggViews.values()) v.root.rotation.z = Math.sin(t * 4) * 0.08;
   }
 
   happyCount() { let n = 0; for (const inst of this.game.ranch) if ((inst.happiness ?? 70) >= 70) n++; return n; }
@@ -477,13 +649,13 @@ export class RanchSim {
 
   showEmote(rid, s, d) { this.creatures.get(rid)?.emote.show(s, d); }
 
-  state() { return { d: this.drops, m: this.messes }; }
-  applyState(s) { this.drops = s.d || []; this.messes = s.m || []; this._applyObjects(); }
+  state() { return { d: this.drops, m: this.messes, e: this.eggs }; }
+  applyState(s) { this.drops = s.d || []; this.messes = s.m || []; this.eggs = s.e || []; this._applyObjects(); }
 
   clear() {
     for (const c of this.creatures.values()) c.dispose();
     this.creatures.clear(); this.byUid.clear();
-    this.drops = []; this.messes = [];
+    this.drops = []; this.messes = []; this.eggs = [];
     this._applyObjects();
   }
 }

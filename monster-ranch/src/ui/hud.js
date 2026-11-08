@@ -58,7 +58,8 @@ export class HUD {
         this.slots[i].querySelector('.slot-name').textContent = lead ? `${this.game.creatureName(lead)} Lv ${lead.level}  (Q: next)` : 'Partner';
       } else c.textContent = '';
     });
-    this.$('.coin-count').textContent = inv.coins;
+    const eggs = this.game.eggs?.length || 0;
+    this.$('.coin-count').textContent = inv.coins + (eggs ? `   🥚 ×${eggs}` : '');
   }
 
   setLook(def, sub) {
