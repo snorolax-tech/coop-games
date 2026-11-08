@@ -69,9 +69,24 @@ export class Companion {
 
   say(sym, d = 1.4) { this.emote?.show(sym, d); }
 
-  /** Local: follow the player. */
+  /** How much to grow the partner so a rancher can sit on it, and how high the seat is. */
+  rideScale() { return this.view ? Math.max(1, 1.2 / this.view.height) : 1; }
+  seatHeight() { return this.view ? this.view.height * this.rideScale() * 0.78 : 0.9; }
+
+  /** Local: follow the player (or carry them while riding). */
   follow(dt, player) {
     if (!this.root || !this.visible) return;
+    if (this.riding) {
+      // the partner is under the player, facing where they look
+      this.pos.set(player.pos.x, player.pos.y, player.pos.z);
+      this.yaw = player.yaw + Math.PI;
+      this.speed = Math.hypot(player.vel.x, player.vel.z) * 0.6;
+      this.scale = this.rideScale();
+      this.excited = 0;
+      this._render(dt);
+      return;
+    }
+    this.scale = 1;
     const w = this.game.world;
     const yaw = player.yaw;
     // stand a little behind and to the right of the player
@@ -118,6 +133,8 @@ export class Companion {
     this.setCreature(sp?.id, !!s[1]);
     this.target.set(s[2], s[3], s[4]);
     this.netYaw = s[5]; this.netSpeed = s[6] / 10; this.excited = s[7] / 10;
+    this.scale = s[8] || 1;
+    this.seat = s[9] || 0; // >0 when the friend is riding it
     if (!this.visible) { this.pos.copy(this.target); this.show(true); }
   }
 
@@ -133,6 +150,8 @@ export class Companion {
   _render(dt) {
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
+    const s = this.scale || 1;
+    this.root.scale.setScalar(this.root.scale.x + (s - this.root.scale.x) * Math.min(1, dt * 6));
     this.view.update(dt, { speed: this.speed, excited: Math.min(1, this.excited) });
     this.emote.update(dt);
   }
@@ -141,7 +160,8 @@ export class Companion {
   state() {
     if (!this.visible || !this.sp) return null;
     const inst = this.game.party.find((c) => c.species === this.sp.id) || this.game.party[0];
-    return [this.sp.num, inst?.shiny ? 1 : 0, +this.pos.x.toFixed(2), +this.pos.y.toFixed(2), +this.pos.z.toFixed(2), +this.yaw.toFixed(2), Math.round(this.speed * 10), Math.round(this.excited * 10)];
+    return [this.sp.num, inst?.shiny ? 1 : 0, +this.pos.x.toFixed(2), +this.pos.y.toFixed(2), +this.pos.z.toFixed(2), +this.yaw.toFixed(2), Math.round(this.speed * 10), Math.round(this.excited * 10),
+      +(this.scale || 1).toFixed(2), this.riding ? +this.seatHeight().toFixed(2) : 0];
   }
 
   clear() { this.show(false); this._dispose(); this.key = ''; }

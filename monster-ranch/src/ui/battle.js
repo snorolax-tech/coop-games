@@ -1,4 +1,4 @@
-// Battle HUD: HP cards for both sides, a short battle log and the move menu (keys 1-4, R to run).
+﻿// Battle HUD: HP cards for both sides, a short battle log and the move menu (keys 1-4, R to run).
 import { MOVES } from '../data/moves.js';
 import { TYPES, findCombo } from '../data/types.js';
 import { SPECIES_BY_ID } from '../data/creatures.js';
@@ -67,24 +67,52 @@ export class BattleHUD {
       <div class="bmoves"></div>
       <div class="bfoot">
         <div class="bhint">Click a move (or press 1-4). To befriend: <b>click the game</b> to aim, scroll to a 🔵 Bond Orb and throw it!</div>
+        <button class="bmove bswitch" data-switch="1"><b>X</b> 🔄 Switch</button>
         <button class="bmove bcatch" data-catch="1"><b>C</b> 🔵 Throw Bond Orb</button>
         <button class="bmove brun" data-run="1"><b>R</b> 🏃 Run</button>
       </div>
     </div>`);
     root.appendChild(this.el);
+    this.picking = false;
+    this.candidates = [];
     this.el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-move]');
       if (btn) { game.requestMove(+btn.dataset.move); game.input.requestLock(); return; }
+      const sw = e.target.closest('[data-swap]');
+      if (sw) { this.pick(sw.dataset.swap); return; }
+      if (e.target.closest('[data-back]')) { this.togglePick(false); return; }
+      if (e.target.closest('[data-switch]')) { this.togglePick(); return; }
       if (e.target.closest('[data-run]')) { game.requestRun(); game.input.requestLock(); return; }
       if (e.target.closest('[data-catch]')) { game.throwOrbInBattle(); }
     });
     this.sig = '';
   }
 
+  /** Open / close the "who do you want to send in?" list. */
+  togglePick(v = !this.picking) {
+    this.picking = v;
+    this.sig = '';
+    this.game.audio.play('ui');
+  }
+
+  /** Pick by number key (1-6) while the list is open. */
+  pickIndex(i) {
+    const c = this.candidates[i];
+    if (c && c.hp > 0 && !c.active) this.pick(c.uid);
+  }
+
+  pick(uid) {
+    this.picking = false;
+    this.sig = '';
+    this.game.requestSwitch(uid);
+    this.game.input.requestLock();
+  }
+
   update(battle, myId) {
-    if (!battle) { this.el.classList.add('hidden'); this.sig = ''; return; }
+    if (!battle) { this.el.classList.add('hidden'); this.sig = ''; this.picking = false; return; }
     const orbs = this.game.inventory.orb || 0;
-    const sig = JSON.stringify(battle) + myId + this.game.input.locked + orbs;
+    const partySig = (this.game.party || []).map((c) => c.uid + c.hp).join();
+    const sig = JSON.stringify(battle) + myId + this.game.input.locked + orbs + this.picking + partySig;
     if (sig === this.sig) return;
     this.sig = sig;
     this.el.classList.remove('hidden');
@@ -109,7 +137,27 @@ export class BattleHUD {
     this.el.querySelector('.blog').innerHTML = battle.log.map((l, i) => `<div class="${i === battle.log.length - 1 ? 'last' : ''}">${l}</div>`).join('');
     const me = battle.allies.find((a) => a.owner === myId && a.hp > 0);
     const moves = this.el.querySelector('.bmoves');
-    if (battle.phase === 'choose' && me && !me.chose) {
+    const myTurn = battle.phase === 'choose' && me && !me.chose;
+    // party list for switching
+    const party = this.game.party || [];
+    this.candidates = party.map((c) => ({ uid: c.uid, hp: c.hp, active: battle.allies.some((a) => a.uid === c.uid) }));
+    const canSwitch = myTurn && this.candidates.some((c) => c.hp > 0 && !c.active);
+    const swBtn = this.el.querySelector('.bswitch');
+    swBtn.disabled = !canSwitch;
+    swBtn.innerHTML = this.picking ? '<b>S</b> ↩ Moves' : '<b>X</b> 🔄 Switch';
+    if (!myTurn) this.picking = false;
+    if (myTurn && this.picking) {
+      moves.innerHTML = party.map((c, i) => {
+        const sp = SPECIES_BY_ID[c.species], t = TYPES[sp.type];
+        const active = this.candidates[i].active, down = c.hp <= 0;
+        const pct = Math.max(0, c.hp / c.stats.hp) * 100;
+        return `<button class="bmove bparty ${active ? 'active' : ''}" data-swap="${c.uid}" style="--tc:${t.color}" ${active || down ? 'disabled' : ''}>
+          <b>${i + 1}</b> ${c.nickname || sp.name} <small>Lv ${c.level} ${t.icon}${active ? ' · in battle' : down ? ' · fainted' : ''}</small>
+          <span class="mini-hp"><i style="width:${pct}%"></i></span></button>`;
+      }).join('') + '<button class="bmove bback" data-back="1">↩ Back</button>';
+      return;
+    }
+    if (myTurn) {
       // if my teammate already picked, show which of my moves would trigger a combo
       const mate = battle.pvp ? null : battle.allies.find((a) => a.owner !== myId && a.ct && a.hp > 0);
       moves.innerHTML = me.moves.map((id, i) => {

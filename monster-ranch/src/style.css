@@ -333,3 +333,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 @keyframes logoBob { 50% { transform: translateY(-6px) rotate(-1.5deg); } }
 .btn { transition: transform .08s, box-shadow .08s, background .15s; }
 .btn:hover:not(:disabled) { transform: translateY(-2px) scale(1.02); }
+.bmove.bswitch { --tc: #9b5de5; flex: none; flex-direction: row; align-items: center; gap: 4px; }
+.bmove.bparty { position: relative; padding-bottom: 12px; }
+.bmove.bparty.active { opacity: .55; }
+.bmove.bback { --tc: #8d99ae; }
+.mini-hp { position: absolute; left: 8px; right: 8px; bottom: 4px; height: 4px; background: #e8dcc4; border-radius: 3px; overflow: hidden; }
+.mini-hp i { display: block; height: 100%; background: #06d6a0; }
+.battle-hud .bmoves { grid-template-columns: repeat(4, 1fr); }

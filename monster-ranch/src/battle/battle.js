@@ -86,18 +86,45 @@ class Battle {
     if (this.allies.every((x) => x.inst.hp <= 0 || x.choice)) this._startTurn();
   }
 
+  /** Use this turn to swap in a different party creature. */
+  switchTo(ownerId, uid) {
+    if (this.phase !== 'choose') return;
+    const a = this.allies.find((x) => x.owner === ownerId);
+    if (!a) return;
+    const inst = a.actor.party.find((c) => c.uid === uid);
+    if (!inst || inst.hp <= 0 || this.allies.some((x) => x.inst === inst)) return;
+    a.choice = 'switch';
+    a.switchTo = inst;
+    this.mgr.changed();
+    if (this.allies.every((x) => x.inst.hp <= 0 || x.choice)) this._startTurn();
+  }
+
+  /** Swaps happen first in the turn; the switched-in creature then takes the hits. */
+  _doSwitches() {
+    this.allies = this.allies.map((a) => {
+      if (a.choice !== 'switch' || !a.switchTo) return a;
+      const inst = a.switchTo;
+      const nb = { ...a, key: `a_${a.owner}_${inst.uid}`, inst, stages: {}, status: null, choice: null, switchTo: null, pos: a.pos.clone() };
+      this.say(`${a.actor.name}: ${nameOf(a.inst)}, come back! Go, ${nameOf(inst)}!`);
+      this.mgr.emit({ b: this.id, sendOut: nb.key, text: `Go, ${nameOf(inst)}!` });
+      nb.switched = true;
+      return nb;
+    });
+  }
+
   _startTurn() {
+    this._doSwitches();
     const acts = [];
     const aliveAllies = this.allies.filter((a) => a.inst.hp > 0);
     const aliveFoes = this.foes.filter((f) => f.inst.hp > 0);
-    aliveAllies.forEach((a, i) => acts.push({ b: a, move: a.choice, target: aliveFoes[i % aliveFoes.length] }));
+    aliveAllies.forEach((a, i) => { if (!a.switched && a.choice) acts.push({ b: a, move: a.choice, target: aliveFoes[i % aliveFoes.length] }); a.switched = false; });
     for (const f of aliveFoes) {
       const target = aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
       acts.push({ b: f, move: pickWildMove(f, target), target });
     }
     acts.sort((x, y) => ((MOVES[y.move].priority || 0) - (MOVES[x.move].priority || 0)) || (stat(y.b, 'spd') - stat(x.b, 'spd')) || (Math.random() - 0.5));
     // co-op combo: two different rancher's creatures using a combo pair of types this turn
-    const owned = aliveAllies.filter((a) => a.choice);
+    const owned = aliveAllies.filter((a) => a.choice && MOVES[a.choice]);
     if (owned.length >= 2 && owned[0].owner !== owned[1].owner) {
       const t1 = MOVES[owned[0].choice].type, t2 = MOVES[owned[1].choice].type;
       const combo = findCombo(t1, t2);
@@ -256,7 +283,7 @@ class Battle {
     const ally = (a) => ({
       key: a.key, owner: a.owner, ownerName: a.actor.name, sp: a.inst.species, lvl: a.inst.level, shiny: a.inst.shiny,
       name: nameOf(a.inst), hp: a.inst.hp, max: a.inst.stats.hp, status: a.status, moves: a.inst.moves, chose: !!a.choice,
-      ct: a.choice ? MOVES[a.choice].type : null, xp: a.inst.xp, xpn: xpToNext(a.inst.level),
+      ct: a.choice ? MOVES[a.choice]?.type || null : null, xp: a.inst.xp, xpn: xpToNext(a.inst.level), uid: a.inst.uid,
       x: +a.pos.x.toFixed(2), y: +a.pos.y.toFixed(2), z: +a.pos.z.toFixed(2), yaw: +a.yaw.toFixed(2),
     });
     const foe = (f) => ({ key: f.key, nid: f.nid, sp: f.inst.species, lvl: f.inst.level, name: nameOf(f.inst), hp: f.inst.hp, max: f.inst.stats.hp, status: f.status });
@@ -322,6 +349,7 @@ export class BattleManager {
   }
 
   choose(actor, moveIndex) { this.battleOf(actor.id)?.choose(actor.id, moveIndex); }
+  switchTo(actor, uid) { this.battleOf(actor.id)?.switchTo(actor.id, uid); }
 
   /** Start a friendly battle between the two ranchers. */
   startPvp(a, b) {

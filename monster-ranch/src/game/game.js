@@ -277,6 +277,7 @@ export class Game {
     net.on('battle', (m) => { if (this.guestActor) this.battles.request(this.guestActor, m.nid); });
     net.on('bmove', (m) => { if (this.guestActor) this.battles.choose(this.guestActor, m.i); });
     net.on('brun', () => { if (this.guestActor) this.battles.run(this.guestActor); });
+    net.on('bswitch', (m) => { if (this.guestActor) this.battles.switchTo(this.guestActor, m.uid); });
     net.on('lead', (m) => { if (this.guestActor) this._setLead(this.guestActor, m.i); });
 
     // ---- guest receives from host ----
@@ -377,6 +378,7 @@ export class Game {
   _applyPose(r, a) {
     if (!a) return;
     this.friendComp.apply(a[7] || null);
+    r.rideHeight = a[7]?.[9] || 0;
     r.setPose(a[0], a[1], a[2], a[3], a[4], a[5]);
     if (a[6] !== r.lastSwings) { if (r.lastSwings !== undefined) r.swing(); r.lastSwings = a[6]; }
   }
@@ -626,6 +628,35 @@ export class Game {
     this.audio.play(this.companionOut ? 'chime' : 'ui');
     this.toast(this.companionOut ? `${this.creatureName(lead)} is walking with you! (F or 6+click to call back)` : `${this.creatureName(lead)} came back.`, 'good');
     if (this.companionOut) this.companion.say('♥', 1.6);
+  }
+
+  /** Hop on / off your partner. Riding = faster, higher jumps, sitting up high. */
+  toggleRide(force) {
+    const want = force ?? !this.riding;
+    if (want) {
+      const lead = this.party[0];
+      if (!lead) { this.toast('You need a partner to ride!', 'muted'); return; }
+      if (lead.hp <= 0) { this.toast(`${this.creatureName(lead)} is too tired to carry you — rest at the Farmhouse.`, 'muted'); return; }
+      if (this.inBattle || this.buildMode.active) return;
+      if (!this.companionOut) { this.companionOut = true; localStorage.setItem('mr-companion', '1'); }
+      this.companion.setCreature(lead.species, lead.shiny);
+      this.companion.show(true, this.player.pos.clone());
+    }
+    this.riding = want;
+    this.companion.riding = want;
+    const p = this.player;
+    p.speedMul = want ? 1.9 : 1;
+    p.jumpMul = want ? 1.25 : 1;
+    p.eyeExtra = want ? this.companion.seatHeight() : 0;
+    this.items.holder.visible = !want || !this.buildMode.active;
+    if (want) {
+      this.audio.play('chime');
+      this.companion.say('♪', 1.4);
+      this.toast(`🐎 Riding ${this.creatureName(this.party[0])}! R to hop off`, 'good');
+    } else {
+      this.audio.play('jump');
+      p.vel.y = 4; // hop down
+    }
   }
 
   petCompanion() {
@@ -1069,6 +1100,12 @@ export class Game {
     if (!this.input.locked) this.input.requestLock();
   }
 
+  requestSwitch(uid) {
+    if (this.isGuest) this.net.send({ t: 'bswitch', uid });
+    else this.battles.switchTo(this.local, uid);
+    this.audio.play('ui');
+  }
+
   requestRun() {
     if (this.isGuest) this.net.send({ t: 'brun' });
     else this.battles.run(this.local);
@@ -1340,6 +1377,7 @@ export class Game {
     this.catching.pending = [];
     this.buildMode.toggle(false);
     this.minimap.show(false);
+    if (this.riding) this.toggleRide(false);
     this.companion.clear();
     this.pendingDuel = null;
     this.duelPrompt.open = false; this.duelPrompt.el.classList.add('hidden');
@@ -1539,7 +1577,11 @@ export class Game {
     const myBattle = this.myBattle;
     // partner walking with you (hidden while it's out battling)
     const lead = this.party[0];
+    // riding (R): hop on / off; you get off automatically when a battle starts or your partner is worn out
+    if (active && !myBattle && !this.buildMode.active && input.wasPressed('KeyR')) this.toggleRide();
+    if (this.riding && (myBattle || !this.companionOut || !lead || lead.hp <= 0)) this.toggleRide(false);
     this.companion.setCreature(lead?.species, lead?.shiny);
+    if (this.riding) this.player.eyeExtra = this.companion.seatHeight();
     const wantComp = this.companionOut && !!lead && !myBattle;
     if (wantComp !== this.companion.visible) this.companion.show(wantComp, this.player.pos.clone().add(new THREE.Vector3(1.4, 0, 1.4)));
     this.companion.follow(dt, this.player);
@@ -1558,7 +1600,9 @@ export class Game {
     this.battleHUD.update(myBattle, this.myId);
     const canPick = this.state === 'playing' && !this.panel.open && !this.chat.open && (active || this.battleCursor);
     if (myBattle && canPick) {
-      for (let i = 0; i < 4; i++) if (input.pressedAny('Digit' + (i + 1))) { this.requestMove(i); if (!input.locked) input.requestLock(); }
+      if (input.pressedAny('KeyX')) this.battleHUD.togglePick();
+      if (this.battleHUD.picking) { for (let i = 0; i < 6; i++) if (input.pressedAny('Digit' + (i + 1))) this.battleHUD.pickIndex(i); }
+      else for (let i = 0; i < 4; i++) if (input.pressedAny('Digit' + (i + 1))) { this.requestMove(i); if (!input.locked) input.requestLock(); }
       if (input.pressedAny('KeyR')) { this.requestRun(); if (!input.locked) input.requestLock(); }
       if (input.pressedAny('KeyC')) this.throwOrbInBattle();
     }

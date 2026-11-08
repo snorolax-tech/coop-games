@@ -68,9 +68,31 @@ export class PvpBattle {
     if (this.allies.every((x) => x.choice)) this._startTurn();
   }
 
+  switchTo(ownerId, uid) {
+    if (this.phase !== 'choose') return;
+    const b = this.allies.find((x) => x.owner === ownerId);
+    const inst = b?.actor.party.find((c) => c.uid === uid);
+    if (!inst || inst.hp <= 0 || inst === b.inst) return;
+    b.choice = 'switch';
+    b.switchTo = inst;
+    this.mgr.changed();
+    if (this.allies.every((x) => x.choice)) this._startTurn();
+  }
+
   _startTurn() {
+    // switches happen first
+    this.allies = this.allies.map((x) => {
+      if (x.choice !== 'switch') return x;
+      const nb = { ...this._battler(x.actor, x.switchTo, x.side), pos: x.pos.clone(), yaw: x.yaw, switched: true };
+      this.say(`${x.actor.name}: ${nameOf(x.inst)}, come back! Go, ${nameOf(x.switchTo)}!`);
+      this.mgr.emit({ b: this.id, sendOut: nb.key, text: `Go, ${nameOf(x.switchTo)}!` });
+      return nb;
+    });
     const [a, b] = this.allies;
-    const acts = [{ b: a, move: a.choice, target: b }, { b, move: b.choice, target: a }];
+    const acts = [];
+    if (!a.switched) acts.push({ b: a, move: a.choice, target: b });
+    if (!b.switched) acts.push({ b, move: b.choice, target: a });
+    a.switched = b.switched = false;
     acts.sort((x, y) => ((MOVES[y.move].priority || 0) - (MOVES[x.move].priority || 0)) || (stat(y.b, 'spd') - stat(x.b, 'spd')) || (Math.random() - 0.5));
     this.queue = acts;
     this.phase = 'act';
@@ -168,7 +190,7 @@ export class PvpBattle {
     const d = (a) => ({
       key: a.key, owner: a.owner, ownerName: a.actor.name, sp: a.inst.species, lvl: a.inst.level, shiny: a.inst.shiny,
       name: nameOf(a.inst), hp: a.inst.hp, max: a.inst.stats.hp, status: a.status, moves: a.inst.moves, chose: !!a.choice, ct: null,
-      xp: a.inst.xp, xpn: xpToNext(a.inst.level),
+      xp: a.inst.xp, xpn: xpToNext(a.inst.level), uid: a.inst.uid,
       x: +a.pos.x.toFixed(2), y: +a.pos.y.toFixed(2), z: +a.pos.z.toFixed(2), yaw: +a.yaw.toFixed(2),
     });
     return { id: this.id, pvp: true, phase: this.phase, turn: this.turn, allies: this.allies.map(d), foes: [], log: this.log.slice(-3) };

@@ -27,6 +27,8 @@ Open http://localhost:5174. Click **New Ranch**, then click the game to capture 
 | 1–6 / wheel | Switch item: Bond Orb, Treat, Brush, Watering Can, Hammer, Partner |
 | 6 then click | Send out your lead partner at the wild creature you're aiming at (starts a battle, or joins your friend's) |
 | Q | Cycle which partner leads |
+| R (outside battle/build) | Ride your partner (about 2x speed, higher jumps); R again to hop off |
+| X in battle | Switch to another party creature (uses your turn) |
 | F (or 6 + click on nothing) | Send your lead partner out to walk with you / call it back. E on it to pet it |
 | 6 + click on your friend | Challenge them to a friendly battle (Y/N to accept). Everyone is healed afterwards |
 | B (on the ranch) | Build mode: Z/C category, 1–9/wheel piece, R rotate (Shift+R fine), P paint, G grid, click place, T copy, V move, X demolish |

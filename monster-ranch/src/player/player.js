@@ -1,4 +1,4 @@
-// First-person controller: WASD + mouse look, sprint, jump, collisions with the
+﻿// First-person controller: WASD + mouse look, sprint, jump, collisions with the
 // 2.5D collider world, standing on platforms, wading in water, locked-zone walls.
 import * as THREE from 'three';
 import { Colliders } from '../world/colliders.js';
@@ -21,6 +21,9 @@ export class Player {
     this.pos = new THREE.Vector3(0, 0, 16);
     this.vel = new THREE.Vector3();
     this.knock = new THREE.Vector3(); // external push (e.g. a grumpy creature's charge)
+    this.speedMul = 1;  // riding makes you faster
+    this.jumpMul = 1;
+    this.eyeExtra = 0;  // sitting up high on your partner
     this.shake = 0;
     this.yaw = 0; this.pitch = 0;
     this.onGround = false;
@@ -98,14 +101,14 @@ export class Player {
     const wx = fx * cos + fz * sin;
     const wz = -fx * sin + fz * cos;
     const sprint = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
-    let speed = (sprint && !this.aiming ? SPRINT : WALK) * (this.aiming ? 0.6 : 1);
+    let speed = (sprint && !this.aiming ? SPRINT : WALK) * (this.aiming ? 0.6 : 1) * this.speedMul;
     if (this.inWater) speed *= 0.55;
     const accel = this.onGround ? 14 : 4;
     this.vel.x = lerp(this.vel.x, wx * speed, Math.min(1, accel * dt));
     this.vel.z = lerp(this.vel.z, wz * speed, Math.min(1, accel * dt));
 
     if (!frozen && this.onGround && input.wasPressed('Space')) {
-      this.vel.y = this.inWater ? JUMP_V * 0.7 : JUMP_V;
+      this.vel.y = (this.inWater ? JUMP_V * 0.7 : JUMP_V) * this.jumpMul;
       this.onGround = false;
       this.onJump?.();
     }
@@ -157,14 +160,14 @@ export class Player {
     }
 
     // camera
-    const targetFov = this.aiming ? 48 : sprint && hs > 7 ? 80 : 75;
+    const targetFov = this.aiming ? 48 : hs > 12 ? 84 : sprint && hs > 7 ? 80 : 75;
     this.fov = lerp(this.fov, targetFov, Math.min(1, dt * 10));
     if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
     this.shake = Math.max(0, this.shake - dt * 2);
     const sh = this.shake * this.shake * 0.25;
     this.camera.position.set(
       this.pos.x + (Math.random() - 0.5) * sh,
-      this.pos.y + EYE + Math.sin(this.bob * 2) * 0.05 * Math.min(1, hs / 6) + (Math.random() - 0.5) * sh,
+      this.pos.y + EYE + this.eyeExtra + Math.sin(this.bob * 2) * 0.05 * Math.min(1, hs / 6) + (Math.random() - 0.5) * sh,
       this.pos.z + (Math.random() - 0.5) * sh);
     this.camera.rotation.set(this.pitch, this.yaw, (Math.random() - 0.5) * sh * 0.2, 'YXZ');
   }

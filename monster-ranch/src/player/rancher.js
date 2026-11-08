@@ -124,6 +124,7 @@ export class Rancher {
     while (d < -Math.PI) d += Math.PI * 2;
     this.yaw += d * (1 - Math.exp(-14 * dt));
     this.root.position.copy(this.pos);
+    this.root.position.y += this.rideHeight || 0; // sitting on their partner
     this.root.rotation.y = this.yaw + Math.PI; // avatar model faces +z, camera yaw 0 looks -z
     this.head.rotation.x = -this.pitch * 0.6;
 
@@ -131,8 +132,15 @@ export class Rancher {
     this.speed = speed;
     this.walk += dt * Math.min(speed, 11) * 1.4;
     const amp = Math.min(1, speed / 5) * 0.7;
-    this.legs[0].rotation.x = Math.sin(this.walk) * amp;
-    this.legs[1].rotation.x = -Math.sin(this.walk) * amp;
+    if (this.rideHeight) {
+      // legs astride the mount
+      this.legs.forEach((l, i) => { l.rotation.x = -1.1; l.rotation.z = i ? -0.45 : 0.45; });
+      this.root.position.y -= 0.55;
+    } else {
+      this.legs.forEach((l) => { l.rotation.z = 0; });
+      this.legs[0].rotation.x = Math.sin(this.walk) * amp;
+      this.legs[1].rotation.x = -Math.sin(this.walk) * amp;
+    }
     this.arms[0].rotation.x = -Math.sin(this.walk) * amp * 0.8;
     let armR = Math.sin(this.walk) * amp * 0.8 - 0.5;
     if (this.swingT > 0) { this.swingT -= dt; armR = -2.2 + (this.swingT / 0.35) * 0.5; }
