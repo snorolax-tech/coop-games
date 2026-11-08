@@ -315,6 +315,7 @@ export class BattleManager {
       const a = b.allies.find((x) => x.owner === owner);
       if (a && result === 'win') a.actor.toast('You won the battle!', 'good');
     }
+    if (result === 'win') this.game.onBattleWon();
     this.battles.delete(b.id);
     this.changed();
   }

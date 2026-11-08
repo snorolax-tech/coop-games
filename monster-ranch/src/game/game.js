@@ -29,6 +29,7 @@ import { StarterPicker } from '../ui/starter.js';
 import { Catching } from '../catching/catching.js';
 import { createCreature } from '../creatures/instance.js';
 import { STARTERS } from '../ui/starter.js';
+import { ratingPoints, ratingInfo } from './rating.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -67,6 +68,8 @@ export class Game {
     this.inventory = newInventory();
     this.party = [];   // my creatures (max 6)
     this.ranch = [];   // shared ranch storage (host) — creatures that didn't fit in a party
+    this.stats = { wins: 0 };
+    this.rating = { level: 0, points: 0, breakdown: [] };
     this.unlocked = new Set(['meadow']);
     this.landmarks = new Set();
     this.guestSaves = {};
@@ -138,7 +141,7 @@ export class Game {
       const now = performance.now();
       if (now - this._blockToastAt < 2500) return;
       this._blockToastAt = now;
-      this.toast(`🔒 ${ZONES[zone].name} opens at Ranch Rating ${ZONES[zone].rating}`, 'muted');
+      this.toast(`🔒 ${ZONES[zone].name} opens at Ranch Rating ${ZONES[zone].rating} (you're at ${this.rating.level}) — fill the Dex, befriend creatures and find landmarks!`, 'muted');
       this.audio.play('locked');
     };
     p.onZone = (zone) => {
@@ -176,6 +179,8 @@ export class Game {
         cr: this.creatures.snapshot(), dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       });
       this.battles.changed();
+      this.updateRating(true);
+      net.send({ t: 'rating', r: this.rating });
       this.chat.add('', `🤠 ${name} joined the ranch!`, '', true);
       this.toast(`${name} joined the ranch!`, 'good');
       this.audio.play('chime');
@@ -233,6 +238,7 @@ export class Game {
     net.on('fx', (m) => this._playFx(m.k, v3(m.p), m.c));
     net.on('snd', (m) => this._playSound(m.n, v3(m.p), m.k));
     net.on('landmark', (m) => this.landmarks.add(m.id));
+    net.on('rating', (m) => { this.rating = m.r; this.hud.setRating(this.rating); if (this.panel.open) this.panel.render(); });
     net.on('party', (m) => { this.party = m.party; this.ranchCount = m.ranch; this._partyUpdated(); });
     net.on('bstate', (m) => this.battleView.apply(m.list));
     net.on('bev', (m) => this._onBattleEvent(m.ev));
@@ -358,12 +364,63 @@ export class Game {
     return this.local;
   }
 
+  // --- ranch rating ----------------------------------------------------------------------
+
+  /** Host: recount rating points; level-ups unlock zones for everyone. silent = no banners. */
+  updateRating(silent = false) {
+    if (this.isGuest) return;
+    let creatures = this.party.length + this.ranch.length;
+    if (this.guestActor) creatures += this.guestActor.party.length;
+    for (const [name, s] of Object.entries(this.guestSaves)) {
+      if (this.guestActor && name === this.guestActor.name) continue;
+      creatures += s?.party?.length || 0;
+    }
+    const { points, breakdown } = ratingPoints({
+      seen: this.dex.seen.size, caught: this.dex.caught.size, creatures, landmarks: this.landmarks.size, wins: this.stats.wins,
+    });
+    const before = this.rating.level;
+    const info = ratingInfo(points);
+    const changed = info.points !== this.rating.points || info.level !== before;
+    this.rating = { ...info, breakdown };
+    this.hud.setRating(this.rating);
+    if (!changed) return;
+    if (this.net.connected) this.net.send({ t: 'rating', r: this.rating });
+    if (this.panel.open) this.panel.render();
+    if (info.level > before && !silent) {
+      this.sharedBanner(`⭐ Ranch Rating ${info.level}!`, 'Your ranch is becoming famous', '#ffd166', 'chime');
+      this.worldFx('sparkle', this.player.pos.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xffd166);
+    }
+    this._unlockForRating(silent);
+  }
+
+  _unlockForRating(silent) {
+    const opened = [];
+    for (const id of WILD_ZONES) {
+      if (this.unlocked.has(id) || ZONES[id].rating > this.rating.level) continue;
+      this.unlocked.add(id);
+      this.world.setUnlocked(id, true);
+      this.worldEvent({ t: 'unlock', id });
+      opened.push(id);
+    }
+    if (!opened.length || silent) return;
+    setTimeout(() => {
+      for (const id of opened) this.sharedBanner(`${ZONES[id].name} is open!`, 'The barrier at the gate has faded — go explore!', ZONES[id].color, 'zone');
+    }, 3600);
+    this.save();
+  }
+
+  onBattleWon() {
+    this.stats.wins++;
+    this.updateRating();
+  }
+
   // --- party, starters & battles ------------------------------------------------------
 
   _giveStarter(actor, id) {
     if (!STARTERS.includes(id)) return;
     const c = createCreature(id, 5, { personality: 'playful' });
     actor.party.push(c);
+    this.updateRating();
     actor.toast(`${SPECIES_BY_ID[id].name} is your new partner! Pick 🐾 (key 6), aim at a wild creature and click to battle.`, 'good');
     this.markCaught(id);
     this.partyChanged(actor);
@@ -380,10 +437,11 @@ export class Game {
 
   /** Host: a newly befriended creature goes to the party, or the ranch if the party is full. */
   addCreatureTo(actor, inst) {
-    if (actor.party.length < 6) { actor.party.push(inst); this.partyChanged(actor); return 'party'; }
-    this.ranch.push(inst);
+    let where = 'ranch';
+    if (actor.party.length < 6) { actor.party.push(inst); where = 'party'; } else this.ranch.push(inst);
     this.partyChanged(actor);
-    return 'ranch';
+    this.updateRating();
+    return where;
   }
 
   markCaught(id) {
@@ -392,6 +450,7 @@ export class Game {
     this.dex.caught.add(id);
     if (this.net.role === 'host' && this.net.connected) this.net.send({ t: 'dex', caught: [id] });
     if (this.panel.open) this.panel.render();
+    this.updateRating();
   }
 
   /** Host: an actor's party changed — refresh my UI or tell the guest. */
@@ -509,6 +568,7 @@ export class Game {
       if (this.isGuest && !fromNet) this.net.send({ t: 'seen', id });
       if (this.net.role === 'host') this.net.send({ t: 'dex', seen: [id] });
     }
+    this.updateRating();
   }
 
   sendChat(text) {
@@ -625,6 +685,9 @@ export class Game {
     if (d?.player) this.player.teleport(d.player.x, d.player.z, d.player.yaw);
     else this.player.teleport(0, 16, 0);
     this.player.zone = this.world.zoneAt(this.player.pos.x, this.player.pos.z);
+    this.stats = { wins: 0, ...(d?.stats || {}) };
+    this.rating = { level: 0, points: 0, breakdown: [] };
+    this.updateRating(true);
   }
 
   serialize() {
@@ -638,6 +701,7 @@ export class Game {
       guests,
       unlocked: [...this.unlocked],
       landmarks: [...this.landmarks],
+      stats: this.stats,
       dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       time: this.world.sky.time,
       nodes: this.world.resources.serialize(),
@@ -748,15 +812,16 @@ export class Game {
     this.save();
   }
 
-  touchLandmark(id, msg, actor = this.local, pos) {
+  touchLandmark(id, msg, actor = this.local, pos, repeatMsg = 'You\'ve already discovered this place.') {
     if (!this.landmarks.has(id)) {
       this.landmarks.add(id);
       this.worldEvent({ t: 'landmark', id });
-      this.sharedBanner('Landmark discovered!', msg, '#ffe066', 'chime');
+      this.sharedBanner('Landmark discovered! (+5 rating)', msg, '#ffe066', 'chime');
       this.worldFx('sparkle', pos || this.player.pos.clone(), 0xffe066);
+      this.updateRating();
       this.save();
     } else {
-      actor.toast('The crystal hums warmly.');
+      actor.toast(repeatMsg);
     }
   }
 

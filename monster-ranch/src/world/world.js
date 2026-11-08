@@ -274,8 +274,9 @@ export class World {
         this.colliders.circle(x, z, 1.25, top, top - 0.6);
       }
       this.reserve(sx, sz, 10);
-      I.add({ id: 'spire', root: crystal, name: 'Sunstone Crystal', sub: 'E  Touch the crystal', range: 4,
-        use: (a) => game.touchLandmark('spire', 'You feel the warm hum of the Sunstone!', a, crystal.getWorldPosition(new THREE.Vector3())) });
+      I.add({ id: 'spire', root: crystal, name: 'Sunstone Crystal', range: 4,
+        sub: () => (game.landmarks.has('spire') ? 'Discovered ✓' : 'E  Touch the crystal (+5 Ranch Rating)'),
+        use: (a) => game.touchLandmark('spire', 'You feel the warm hum of the Sunstone!', a, crystal.getWorldPosition(new THREE.Vector3()), 'The crystal hums warmly.') });
     }
 
     // Old Stone Arch (Meadow)
@@ -288,6 +289,8 @@ export class World {
       const top = new THREE.Mesh(G.box, M('#8a8a94')); top.scale.set(11, 1.4, 2); top.position.y = 7.6; g.add(top);
       this._place(g, ax, az, rot);
       const y = groundY(ax, az);
+      // a glowing rune stone under the arch
+      this._landmarkStone(game, 'arch', ax, az, '#7ae7ff', 'Ancient Rune Stone', 'Old carvings glow at your touch — the Meadow\'s first ranchers lived here!');
       for (const s of [-1, 1]) this.colliders.circle(ax + Math.cos(rot) * s * 4, az - Math.sin(rot) * s * 4, 1.1, y + 7);
       this.colliders.box(ax, az, 5.5, 1, rot, y + 8.3, y + 6.9);
       this.reserve(ax, az, 8);
@@ -313,6 +316,8 @@ export class World {
         this.colliders.circle(x, z, 1.6, top, top - 0.5);
       }
       this.reserve(ex, ez, 13);
+      // glowing mushroom ring on top of the stump
+      this._landmarkStone(game, 'stump', ex, ez, '#c77dff', 'Elder Stump Glowcap', 'The glowcap pulses — this stump is older than the forest itself!', base + 7.1, 'mushroom');
     }
 
     // Lakeside dock + island
@@ -328,6 +333,7 @@ export class World {
       this.scene.add(g);
       this.colliders.box(0, startZ + len / 2, 1.5, len / 2, 0, top, top - 0.4);
       this.reserve(0, startZ + len / 2, 4);
+      this._landmarkStone(game, 'dock', 0, startZ + len - 1, '#4cc9f0', 'Old Dock Bell', 'Ding! The bell echoes across Glimmer Lake.', top, 'bell');
     }
 
     // Volcano crater lava glow
@@ -342,7 +348,38 @@ export class World {
       this.scene.add(glow);
       this.animated.push((t) => { lava.material.color.setHSL(0.04 + Math.sin(t * 2) * 0.01, 1, 0.5 + Math.sin(t * 3.1) * 0.06); });
       this.reserve(VOLCANO.x, VOLCANO.z, 20);
+      // obsidian shrine on the crater rim
+      const sx = VOLCANO.x + VOLCANO.crater + 5, sz = VOLCANO.z;
+      this._landmarkStone(game, 'crater', sx, sz, '#ff7b2e', 'Obsidian Shrine', 'Heat shimmers around the shrine — you reached the top of the Cinder Hills!');
     }
+  }
+
+  /** A small touchable landmark marker. kind: 'stone' | 'mushroom' | 'bell' */
+  _landmarkStone(game, id, x, z, color, name, msg, y = groundY(x, z), kind = 'stone') {
+    const M = (c, e) => new THREE.MeshLambertMaterial({ color: c, flatShading: true, ...(e || {}) });
+    const g = new THREE.Group();
+    const glow = M(color, { emissive: color, emissiveIntensity: 0.7 });
+    if (kind === 'mushroom') {
+      const stem = new THREE.Mesh(G.cyl, M('#f6eedd')); stem.scale.set(0.5, 1.2, 0.5); stem.position.y = 0.6; g.add(stem);
+      const cap = new THREE.Mesh(G.sphere, glow); cap.scale.set(2, 1, 2); cap.position.y = 1.3; g.add(cap);
+    } else if (kind === 'bell') {
+      for (const s of [-1, 1]) { const p = new THREE.Mesh(G.box, M('#8b5a2b')); p.scale.set(0.2, 2.4, 0.2); p.position.set(s * 0.7, 1.2, 0); g.add(p); }
+      const beam = new THREE.Mesh(G.box, M('#6b3e2e')); beam.scale.set(1.8, 0.2, 0.25); beam.position.y = 2.4; g.add(beam);
+      const bell = new THREE.Mesh(G.cone, glow); bell.scale.set(0.8, 0.8, 0.8); bell.position.y = 1.85; g.add(bell);
+    } else {
+      const rock = new THREE.Mesh(G.dodec, M('#5a5a66')); rock.scale.set(1.3, 2.2, 1.0); rock.position.y = 1.0; g.add(rock);
+      const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), glow); rune.position.set(0, 1.6, 0.5); g.add(rune);
+      this.animated.push((t) => { rune.rotation.y = t; rune.position.y = 1.6 + Math.sin(t * 2) * 0.08; });
+    }
+    g.position.set(x, y, z);
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.scene.add(g);
+    if (kind !== 'bell') this.colliders.circle(x, z, 0.8, y + 1.2);
+    this.reserve(x, z, 3);
+    game.interactions.add({
+      id: 'lm:' + id, root: g, name, sub: () => (game.landmarks.has(id) ? 'Discovered ✓' : 'E  Discover landmark (+5 Ranch Rating)'),
+      use: (a) => game.touchLandmark(id, msg, a, g.position.clone().add(new THREE.Vector3(0, 1.5, 0))),
+    });
   }
 
   // --- zone decoration ---------------------------------------------------------

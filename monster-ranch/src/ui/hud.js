@@ -14,6 +14,8 @@ export class HUD {
         <div class="topleft">
           <div class="zone-pill"><span class="zone-dot"></span><span class="zone-name"></span></div>
           <div class="clock"><span class="clock-icon"></span><span class="clock-time"></span></div>
+          <div class="rating-pill" title="Ranch Rating — open Tab for details">⭐ <span class="rating-text">Ranch Rating 0</span>
+            <div class="rating-bar"><i></i></div></div>
         </div>
         <div class="topright">
           <div class="coins">🪙 <span class="coin-count">0</span></div>
@@ -70,6 +72,13 @@ export class HUD {
     this.$('.look-sub').textContent = sub;
     look.classList.add('on');
     this.$('.crosshair').classList.add('on');
+  }
+
+  setRating(r) {
+    const next = r.next;
+    this.$('.rating-text').textContent = next ? `Ranch Rating ${r.level}  ·  ${r.points}/${next}` : `Ranch Rating ${r.level} (max!)`;
+    const pct = next ? ((r.points - r.prev) / (next - r.prev)) * 100 : 100;
+    this.$('.rating-bar i').style.width = `${Math.max(0, Math.min(100, pct))}%`;
   }
 
   setRoom(code) {

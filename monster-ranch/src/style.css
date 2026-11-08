@@ -204,3 +204,16 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .pcard .hpbar { background: #e8dcc4; border: 2px solid #2b2d42; height: 10px; }
 .xpbar { height: 6px; background: #e8dcc4; border-radius: 4px; overflow: hidden; margin-top: 4px; }
 .xpbar i { display: block; height: 100%; background: #4cc9f0; }
+
+/* ---------- ranch rating ---------- */
+.rating-pill { background: rgba(43,45,66,.78); border: 2px solid #ffd166; padding: 5px 12px 7px; border-radius: 14px; font-weight: 800; font-size: 14px; min-width: 190px; }
+.rating-bar { height: 6px; background: rgba(0,0,0,.4); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.rating-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffd166, #ff9e00); transition: width .5s; }
+.rating-box { background: #fff; border: 3px solid #2b2d42; border-radius: 14px; padding: 10px 14px; margin-bottom: 14px; }
+.rating-head { font-size: 16px; margin-bottom: 6px; }
+.rating-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rating-table td { padding: 2px 6px; border-bottom: 1px solid #eee2c8; }
+.rating-table td:not(:first-child) { text-align: right; }
+.zone-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.zone-chip { font-size: 12px; font-weight: 800; padding: 3px 9px; border-radius: 999px; border: 2px solid var(--zc); opacity: .6; }
+.zone-chip.open { background: var(--zc); color: #fff; opacity: 1; text-shadow: 0 1px 1px rgba(0,0,0,.4); }

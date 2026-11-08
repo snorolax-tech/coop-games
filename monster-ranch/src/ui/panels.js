@@ -3,7 +3,7 @@ import { ITEMS } from '../data/items.js';
 import { SPECIES, SPECIES_BY_ID } from '../data/creatures.js';
 import { TYPES, RARITY, PERSONALITIES, CHART, CREATURE_TYPES, COMBOS, effectiveness } from '../data/types.js';
 import { MOVES } from '../data/moves.js';
-import { ZONES } from '../world/zones.js';
+import { ZONES, WILD_ZONES } from '../world/zones.js';
 import { portrait } from '../creatures/portraits.js';
 import { xpToNext } from '../battle/rules.js';
 
@@ -47,7 +47,7 @@ export class TabPanel {
           <div class="item-name">${it.name}</div>
           <div class="item-count">×${inv[id] || 0}</div>
         </div>`).join('');
-      body.innerHTML = `<div class="coins-big">🪙 ${inv.coins} coins</div><div class="item-grid">${cells}</div>
+      body.innerHTML = `${this.ratingHTML()}<div class="coins-big">🪙 ${inv.coins} coins</div><div class="item-grid">${cells}</div>
         <p class="hint">Sell resources at the Ranch Shop stall. Hover an item for details.</p>`;
     } else if (this.tab === 'party') {
       this.renderParty(body);
@@ -82,6 +82,20 @@ export class TabPanel {
       if (!dex.seen.has(b.dataset.sp)) { this.game.audio.play('locked'); return; }
       this.dexSel = b.dataset.sp; this.game.audio.play('ui'); this.render();
     });
+  }
+
+  ratingHTML() {
+    const g = this.game, r = g.rating;
+    const zones = WILD_ZONES.map((id) => {
+      const z = ZONES[id], open = g.unlocked.has(id);
+      return `<span class="zone-chip ${open ? 'open' : ''}" style="--zc:${z.color}">${open ? '🔓' : '🔒'} ${z.name} <small>(${z.rating})</small></span>`;
+    }).join('');
+    const rows = (r.breakdown || []).map((b) => `<tr><td>${b.label}</td><td>${b.count}${b.cap ? ` <small>(max ${b.cap})</small>` : ''}</td><td>×${b.each}</td><td><b>${b.pts}</b></td></tr>`).join('');
+    return `<div class="rating-box">
+      <div class="rating-head"><b>⭐ Ranch Rating ${r.level}</b> — ${r.points} points${r.next ? ` · next rating at ${r.next}` : ' · max!'}</div>
+      <table class="rating-table">${rows}</table>
+      <div class="zone-chips">${zones}</div>
+    </div>`;
   }
 
   renderParty(body) {
