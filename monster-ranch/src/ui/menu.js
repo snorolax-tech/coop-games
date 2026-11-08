@@ -35,6 +35,7 @@ export class MainMenu {
             </div>
           </div>
           <div class="menu-status hidden"></div>
+          <div class="version">Version <b class="ver"></b> — you and your friend should see the same number. If not, press Ctrl+F5.</div>
           <div class="controls">
             <b>WASD</b> move · <b>Mouse</b> look · <b>Space</b> jump · <b>Shift</b> sprint · <b>E</b> interact<br>
             <b>Left click</b> use item · <b>Right click</b> aim · <b>1-5 / wheel</b> switch item · <b>Tab</b> inventory · <b>Enter</b> chat · <b>Esc</b> pause
@@ -44,6 +45,7 @@ export class MainMenu {
     root.appendChild(this.el);
     const $ = (s) => this.el.querySelector(s);
     this.$ = $;
+    $('.ver').textContent = handlers.version || 'dev';
     const name = $('.name');
     name.value = this.profile.name;
     name.addEventListener('input', () => { this.profile.name = name.value.trim() || 'Rancher'; this._persist(); });

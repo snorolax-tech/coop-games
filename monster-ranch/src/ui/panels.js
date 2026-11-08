@@ -102,7 +102,9 @@ export class TabPanel {
     const g = this.game;
     const party = g.party || [];
     if (!party.length) {
-      body.innerHTML = `<div class="empty-state"><div class="big">🥚</div><h3>No creatures yet</h3><p>Choose a starter partner to begin!</p></div>`;
+      body.innerHTML = `<div class="empty-state"><div class="big">🥚</div><h3>No creatures yet</h3><p>Choose a starter partner to begin!</p>
+        <button class="btn primary" data-a="starter">🐾 Choose your starter</button></div>`;
+      body.querySelector('[data-a=starter]').onclick = () => { this.toggle(false); g.starter.show(); };
       return;
     }
     const ranch = g.isGuest ? (g.ranchCount || 0) : g.ranch.length;

@@ -114,6 +114,13 @@ export class Net {
     }
   }
 
+  /** Host: disconnect the current guest without closing the room. */
+  dropGuest() {
+    const c = this.conn;
+    this.conn = null;
+    try { c?.close(); } catch { /* */ }
+  }
+
   send(msg) {
     if (this.conn && this.conn.open) {
       try { this.conn.send(msg); } catch (e) { console.warn('[net] send failed', e); }

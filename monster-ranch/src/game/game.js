@@ -39,6 +39,9 @@ import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
 const DAY_SECONDS = 12 * 60; // one in-game day = 12 real minutes
+// eslint-disable-next-line no-undef
+export const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev';
+const REFRESH_MSG = 'Press Ctrl+F5 (or Cmd+Shift+R on Mac) on BOTH computers to load the newest version, then join again.';
 const v3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
 const r2 = (n) => Math.round(n * 100) / 100;
 
@@ -171,6 +174,14 @@ export class Game {
 
     // ---- host receives from guest ----
     net.on('hello', (m) => {
+      if (m.v !== BUILD_ID) {
+        // different game versions can't play together — tell both sides to refresh
+        net.send({ t: 'bye', reason: `Your game version doesn't match the host's. ${REFRESH_MSG}` });
+        setTimeout(() => net.dropGuest(), 300);
+        this.toast(`A friend tried to join with a different game version. ${REFRESH_MSG}`, 'bad');
+        this.chat.add('', `⚠️ A friend tried to join with a different game version — both of you press Ctrl+F5 to refresh.`, '', true);
+        return;
+      }
       const name = String(m.name || 'Friend').slice(0, 14);
       let saved = this.guestSaves[name] || {};
       if (saved.orb !== undefined) saved = { inv: saved, party: [] }; // old save format
@@ -184,7 +195,7 @@ export class Game {
       this.guestActor = actor;
       this._spawnRemote({ name, color: m.color });
       net.send({
-        t: 'welcome', host: { name: this.profile.name, color: this.profile.color },
+        t: 'welcome', v: BUILD_ID, host: { name: this.profile.name, color: this.profile.color },
         time: this.world.sky.time, unlocked: [...this.unlocked], landmarks: [...this.landmarks],
         nodes: this.world.resources.flags(), inv, party: actor.party, pr: this.projectiles.snapshot(),
         cr: this.creatures.snapshot(), dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
@@ -272,6 +283,7 @@ export class Game {
     });
 
     net.onPeerLeave = () => {
+      if (!this.guestActor) return; // e.g. a rejected join attempt
       if (this.guestActor) {
         this.battles.run(this.guestActor);
         this.guestSaves[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party };
@@ -285,7 +297,7 @@ export class Game {
       this.save();
     };
     net.onDisconnect = (reason) => {
-      if (this.state === 'menu') return;
+      if (this.state === 'menu') { this._joinReject?.(reason || 'Connection closed.'); return; }
       this.quitToMenu(reason);
     };
   }
@@ -339,14 +351,21 @@ export class Game {
   joinRanch(code, profile) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => { this.net.leave(); reject(new Error('The host did not respond.')); }, 12000);
+      this._joinReject = (msg) => { clearTimeout(timeout); this._joinReject = null; reject(new Error(msg)); };
       this.net.on('welcome', (m) => {
         clearTimeout(timeout);
+        this._joinReject = null;
+        if (m.v !== BUILD_ID) {
+          this.net.leave();
+          reject(new Error(`The host is running a different game version. ${REFRESH_MSG}`));
+          return;
+        }
         this._startGuest(m, profile);
         resolve();
       });
       this.net.join(code).then(() => {
-        this.net.send({ t: 'hello', name: profile.name, color: profile.color });
-      }).catch((e) => { clearTimeout(timeout); reject(e); });
+        this.net.send({ t: 'hello', v: BUILD_ID, name: profile.name, color: profile.color });
+      }).catch((e) => { clearTimeout(timeout); this._joinReject = null; reject(e); });
     });
   }
 

@@ -241,3 +241,5 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .barn-info { flex: 1; }
 .hold-ring { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; transform: translate(-50%, -50%); opacity: 0; transition: opacity .15s; pointer-events: none; }
 .hold-ring i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(#ff8fb8 var(--p, 0%), rgba(255,255,255,.15) 0); -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); }
+.version { margin-top: 12px; font-size: 11.5px; opacity: .7; }
+.version b { letter-spacing: 1px; }
