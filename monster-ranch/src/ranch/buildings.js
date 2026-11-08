@@ -308,7 +308,7 @@ export function buildModel(type, paint = null, text = '') {
       const sp = SPECIES_BY_ID[['emberpup', 'puddlop', 'sproutle', 'zapkit', 'puffpip'][Math.floor(Math.random() * 5)]];
       const model = buildCreatureModel(sp);
       const stone = PM('#c4c4ce');
-      model.root.traverse((o) => { if (o.isMesh) o.material = stone; });
+      model.root.traverse((o) => { if (o.userData.outline) o.visible = false; else if (o.isMesh) o.material = stone; });
       model.root.scale.setScalar(1.5);
       model.root.position.y = 1.07;
       g.add(model.root);

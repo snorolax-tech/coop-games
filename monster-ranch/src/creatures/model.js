@@ -1,28 +1,63 @@
-// Builds a creature's 3D model from primitives, driven by the `model` block in
+﻿// Builds a creature's 3D model from primitives, driven by the `model` block in
 // data/creatures.js, and animates it (breathing, hopping, walking, wings, tail wag, blinking).
 // Every creature faces +z in its local space.
 import * as THREE from 'three';
 
-const SPH = new THREE.SphereGeometry(1, 18, 12);
-const SPH_LO = new THREE.SphereGeometry(1, 10, 8);
-const CONE = new THREE.ConeGeometry(1, 1, 10);
-const CYL = new THREE.CylinderGeometry(1, 1, 1, 10);
+const SPH = new THREE.SphereGeometry(1, 24, 16);
+const SPH_LO = new THREE.SphereGeometry(1, 12, 8);
+const CONE = new THREE.ConeGeometry(1, 1, 12);
+const CYL = new THREE.CylinderGeometry(1, 1, 1, 12);
 const OCTA = new THREE.OctahedronGeometry(1, 0);
 const DODE = new THREE.DodecahedronGeometry(1, 0);
 const BOX = new THREE.BoxGeometry(1, 1, 1);
+
+// Cartoon shading: a 4-step light ramp instead of smooth lighting.
+const TOON_RAMP = (() => {
+  const data = new Uint8Array([110, 170, 225, 255]);
+  const t = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+})();
 
 const matCache = new Map();
 function mat(color, emissive = 0, intensity = 0.6) {
   const key = color + '|' + emissive + '|' + intensity;
   let m = matCache.get(key);
   if (!m) {
-    m = new THREE.MeshLambertMaterial({ color, emissive: emissive || 0x000000, emissiveIntensity: emissive ? intensity : 1 });
+    m = new THREE.MeshToonMaterial({ color, gradientMap: TOON_RAMP, emissive: emissive || 0x000000, emissiveIntensity: emissive ? intensity : 1 });
     matCache.set(key, m);
   }
   return m;
 }
 const PUPIL = new THREE.MeshBasicMaterial({ color: 0x1b1b2f });
 const SHINE = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const TONGUE = new THREE.MeshBasicMaterial({ color: 0xff6b8b });
+const EYE_WHITE = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const OUTLINE = new THREE.MeshBasicMaterial({ color: 0x2b2d42, side: THREE.BackSide });
+const irisCache = new Map();
+const IRIS_MATS = new Set();
+const _look = new THREE.Vector3();
+const _wp = new THREE.Vector3();
+let LOOK_TARGET = null;
+/** Creatures within ~14 m look at this point (the game sets it to the camera each frame). */
+export function setLookTarget(v) { LOOK_TARGET = v; }
+function irisMat(hex) {
+  let m = irisCache.get(hex);
+  if (!m) {
+    const c = new THREE.Color(hex);
+    const hsl = {}; c.getHSL(hsl);
+    // keep irises rich and readable: not too pale, not too dark
+    c.setHSL(hsl.h, Math.min(0.75, Math.max(0.4, hsl.s)), Math.min(0.32, Math.max(0.2, hsl.l * 0.6)));
+    m = new THREE.MeshBasicMaterial({ color: c });
+    irisCache.set(hex, m);
+    IRIS_MATS.add(m);
+  }
+  return m;
+}
+// set per build: iris colour + whether the species is grumpy (gets a fang)
+let EYE_STYLE = { iris: '#3a86ff', grumpy: false };
 
 function mesh(geo, material, parent, x = 0, y = 0, z = 0, sx = 1, sy = sx, sz = sx) {
   const m = new THREE.Mesh(geo, material);
@@ -47,21 +82,41 @@ function palette(m, shiny) {
 
 // --- eyes ----------------------------------------------------------------------
 
+const SMILE = new THREE.TorusGeometry(1, 0.26, 6, 14, Math.PI);
+
 function addEyes(head, parts, { spacing, y, z, r, angle = 0.35 }) {
+  const iris = irisMat(EYE_STYLE.iris);
   for (const s of [-1, 1]) {
     const g = new THREE.Group();
     g.position.set(s * spacing, y, z);
     g.rotation.y = s * angle;
-    mesh(SPH, mat('#ffffff'), g, 0, 0, 0, r, r * 1.1, r * 0.8);
-    mesh(SPH_LO, PUPIL, g, 0, -r * 0.05, r * 0.5, r * 0.62, r * 0.72, r * 0.4);
-    mesh(SPH_LO, SHINE, g, r * 0.22, r * 0.25, r * 0.78, r * 0.2);
+    const white = mesh(SPH, EYE_WHITE, g, 0, 0, 0, r, r * 1.12, r * 0.8);
+    white.userData.noOutline = true;
+    // the part that moves to look around
+    const look = new THREE.Group(); g.add(look);
+    mesh(SPH_LO, iris, look, 0, -r * 0.04, r * 0.48, r * 0.7, r * 0.8, r * 0.38);
+    mesh(SPH_LO, PUPIL, look, 0, -r * 0.04, r * 0.6, r * 0.48, r * 0.56, r * 0.32);
+    mesh(SPH_LO, SHINE, look, r * 0.24, r * 0.3, r * 0.8, r * 0.2);
+    mesh(SPH_LO, SHINE, look, -r * 0.18, -r * 0.22, r * 0.8, r * 0.09);
     head.add(g);
     parts.eyes.push(g);
+    parts.looks.push({ look, eye: g, r });
   }
-  // little smile
-  const mouth = mesh(new THREE.TorusGeometry(1, 0.28, 6, 12, Math.PI), PUPIL, head, 0, y - r * 1.25, z + r * 0.15, r * 0.35);
-  mouth.rotation.z = Math.PI;
-  mouth.rotation.x = -0.3;
+  // mouth: a smile normally, opens up when happy or excited
+  const my = y - r * 1.3, mz = z + r * 0.15;
+  const smile = mesh(SMILE, PUPIL, head, 0, my, mz, r * 0.34);
+  smile.rotation.z = Math.PI;
+  smile.rotation.x = -0.3;
+  const open = new THREE.Group(); open.position.set(0, my - r * 0.05, mz + r * 0.02); open.visible = false; head.add(open);
+  mesh(SPH_LO, PUPIL, open, 0, 0, 0, r * 0.36, r * 0.26, r * 0.12);
+  mesh(SPH_LO, TONGUE, open, 0, -r * 0.1, r * 0.04, r * 0.22, r * 0.1, r * 0.08);
+  parts.smile = smile; parts.mouthOpen = open;
+  if (EYE_STYLE.grumpy) {
+    for (const s of [-1, 1]) {
+      const f = mesh(CONE, SHINE, head, s * r * 0.24, my - r * 0.16, mz + r * 0.04, r * 0.08, r * 0.2, r * 0.08);
+      f.rotation.z = Math.PI;
+    }
+  }
 }
 
 // --- features ---------------------------------------------------------------------
@@ -310,6 +365,37 @@ function addFeature(name, ctx) {
   }
 }
 
+/**
+ * Cartoon outlines ("inverted hull"): a slightly bigger, back-face-only dark copy behind
+ * each main body part. Skips eyes, tiny details and glowing bits.
+ */
+function addOutlines(rig) {
+  const list = [];
+  rig.traverse((o) => {
+    if (!o.isMesh || o.userData.noOutline || o.userData.outline) return;
+    if (o.material === PUPIL || o.material === SHINE || o.material === EYE_WHITE || o.material === TONGUE || IRIS_MATS.has(o.material)) return;
+    const em = o.material.emissive;
+    if (em && (em.r + em.g + em.b) > 0.05) return; // flames, glowing crystals
+    const big = Math.max(o.scale.x, o.scale.y, o.scale.z);
+    const isSphere = o.geometry === SPH;
+    const isPointy = o.geometry === CONE;
+    if (!((isSphere && big >= 0.1) || (isPointy && big >= 0.12))) return;
+    list.push(o);
+  });
+  for (const o of list) {
+    const ol = new THREE.Mesh(o.geometry, OUTLINE);
+    ol.position.copy(o.position);
+    ol.quaternion.copy(o.quaternion);
+    const k = o.geometry === CONE ? 1.12 : 1.07;
+    ol.scale.copy(o.scale).multiplyScalar(k);
+    ol.userData.outline = true;
+    ol.userData.noHighlight = true;
+    ol.raycast = () => {};
+    o.parent.add(ol);
+    o.userData.outlineMesh = ol;
+  }
+}
+
 // --- body plans ---------------------------------------------------------------------
 
 /**
@@ -323,8 +409,12 @@ export function buildCreatureModel(species, { shiny = false } = {}) {
   const root = new THREE.Group();
   const rig = new THREE.Group();
   root.add(rig);
-  const parts = { eyes: [], ears: [], legs: [], arms: [], wings: [], flames: [], glows: [], tail: null, segments: [], orbit: null, floatNode: null };
+  const parts = { eyes: [], looks: [], ears: [], legs: [], arms: [], wings: [], flames: [], glows: [], tail: null, segments: [], orbit: null, floatNode: null };
   const body = mat(pal.body), belly = mat(pal.belly);
+  // iris takes the accent colour unless it's too close to the body colour
+  const accent = new THREE.Color(pal.accent), bodyC = new THREE.Color(pal.body);
+  const close = Math.abs(accent.r - bodyC.r) + Math.abs(accent.g - bodyC.g) + Math.abs(accent.b - bodyC.b) < 0.35;
+  EYE_STYLE = { iris: close ? '#4a3b2a' : pal.accent, grumpy: species.personality === 'grumpy' };
   let head, hr, headPos, tailPos, backPos, height, bodyW = 0.4, bodyH = 0.4, bodyL = 0.4, bodyNode = rig, hover = 0;
 
   switch (m.plan) {
@@ -355,6 +445,8 @@ export function buildCreatureModel(species, { shiny = false } = {}) {
         const g = new THREE.Group(); g.position.set(x, hip, z); rig.add(g);
         mesh(CYL, body, g, 0, -L / 2, 0, 0.075, L + 0.04, 0.075);
         mesh(SPH, belly, g, 0, -L, 0.02, 0.085, 0.06, 0.1);
+        // little toe beans
+        for (const tx of [-0.035, 0.035]) mesh(SPH_LO, body, g, tx, -L - 0.005, 0.1, 0.03, 0.025, 0.03).userData.noOutline = true;
         parts.legs.push(g);
       }
       tailPos = new THREE.Vector3(0, hip + 0.25, -0.44);
@@ -373,6 +465,7 @@ export function buildCreatureModel(species, { shiny = false } = {}) {
         const g = new THREE.Group(); g.position.set(s * 0.15, 0.3, 0); rig.add(g);
         mesh(CYL, body, g, 0, -0.14, 0, 0.09, 0.3, 0.09);
         mesh(SPH, belly, g, 0, -0.28, 0.04, 0.11, 0.07, 0.14);
+        for (const tx of [-0.05, 0, 0.05]) mesh(SPH_LO, body, g, tx, -0.29, 0.16, 0.035, 0.03, 0.035).userData.noOutline = true;
         parts.legs.push(g);
         const a = new THREE.Group(); a.position.set(s * 0.34, 0.8, 0.02); a.rotation.z = s * 0.4; rig.add(a);
         mesh(SPH, body, a, 0, -0.14, 0, 0.08, 0.2, 0.08);
@@ -471,8 +564,9 @@ export function buildCreatureModel(species, { shiny = false } = {}) {
   for (const f of m.features || []) addFeature(f, ctx);
 
   const size = m.size || 1;
+  addOutlines(rig);
   rig.scale.setScalar(size);
-  root.traverse((o) => { if (o.isMesh) { o.castShadow = o.geometry === SPH && o.scale.x > 0.15; o.receiveShadow = false; } });
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = !o.userData.outline && o.geometry === SPH && o.scale.x > 0.15; o.receiveShadow = false; } });
 
   return new CreatureModel(root, rig, parts, {
     plan: m.plan, height: height * size, radius: Math.max(0.3, 0.45 * size), hover: hover * size, size, hop: !!m.hop || m.plan === 'blob', shiny,
@@ -577,7 +671,30 @@ export class CreatureModel {
     p.segments.forEach((s, i) => {
       s.position.x = Math.sin(t * 3 - i * 0.8) * 0.12 * (i + 1) * 0.4;
       s.position.y = Math.cos(t * 3 - i * 0.8) * 0.06;
+      if (s.userData.outlineMesh) s.userData.outlineMesh.position.copy(s.position);
     });
+
+    // eyes follow the camera when you're close; mouth opens when happy/excited
+    if (p.looks.length) {
+      let tx = 0, ty = 0;
+      if (LOOK_TARGET && !sleeping && this.root.getWorldPosition(_wp).distanceTo(LOOK_TARGET) < 14) {
+        const L0 = p.looks[0];
+        _look.copy(LOOK_TARGET);
+        L0.eye.worldToLocal(_look).normalize();
+        tx = Math.max(-1, Math.min(1, _look.x * 1.6));
+        ty = Math.max(-1, Math.min(1, _look.y * 1.6));
+      }
+      for (const L of p.looks) {
+        const k = Math.min(1, dt * 10);
+        L.look.position.x += (tx * L.r * 0.26 - L.look.position.x) * k;
+        L.look.position.y += (ty * L.r * 0.2 - L.look.position.y) * k;
+      }
+    }
+    if (p.mouthOpen) {
+      const open = !sleeping && (state.excited || 0) > 0.35;
+      p.mouthOpen.visible = open;
+      p.smile.visible = !open;
+    }
 
     // flames flicker, glows pulse
     p.flames.forEach((f, i) => { const k = 1 + Math.sin(t * 17 + i * 3) * 0.12 + Math.sin(t * 29) * 0.06; f.scale.set(1, k, 1); });

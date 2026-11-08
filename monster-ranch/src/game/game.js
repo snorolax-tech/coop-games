@@ -40,6 +40,7 @@ import { SUPPLIES, UPGRADES, ZONE_PASSES, makeRequest } from '../data/shop.js';
 import { GUARDIANS } from '../data/creatures.js';
 import { Minimap } from '../ui/minimap.js';
 import { Companion } from '../creatures/companion.js';
+import { setLookTarget } from '../creatures/model.js';
 import { DuelPrompt } from '../ui/battle.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
@@ -1491,6 +1492,7 @@ export class Game {
     if (active && input.wasPressed('KeyB')) this.buildMode.toggle();
     if (this.state === 'playing' && !this.chat.open && input.pressedAny('KeyM')) { this.minimap.toggleFull(); this.audio.play('ui'); }
     this.minimap.update(dt);
+    setLookTarget(this.camera.position);
     this.buildMode.update(dt, input);
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);
