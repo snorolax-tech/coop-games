@@ -250,3 +250,19 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .role-btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .role-tag { font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: #ffd6e8; }
 .role-tag.train { background: #cdeffd; }
+.bfoot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.bfoot .bhint { flex: 1; text-align: left; margin: 0; }
+.bmove.brun { --tc: #8d99ae; flex: none; flex-direction: row; align-items: center; gap: 4px; }
+.battle-hud.cursor { border-color: #06d6a0; box-shadow: 0 0 0 3px rgba(6,214,160,.35); }
+.battle-hud.cursor .bmove { cursor: pointer; }
+
+/* ---------- shop & notice board ---------- */
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.shop-item { background: #fff; border: 3px solid #2b2d42; border-radius: 14px; padding: 10px; text-align: center; display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.shop-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.shop-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 3px solid #2b2d42; border-radius: 14px; padding: 8px 12px; }
+.shop-row .item-icon { font-size: 28px; }
+.shop-info { flex: 1; }
+.shop-info .hint { margin: 2px 0 0; }
+.owned { font-weight: 900; color: #06a77d; }
+.shop-row.req { border-color: #d9a066; background: #fffaf0; }

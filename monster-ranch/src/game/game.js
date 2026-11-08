@@ -35,6 +35,9 @@ import { RanchSim } from '../ranch/ranch.js';
 import { BuildMode } from '../ui/build.js';
 import { BarnPanel } from '../ui/barn.js';
 import { HOTBAR } from '../data/items.js';
+import { ShopPanel, BoardPanel } from '../ui/shop.js';
+import { SUPPLIES, UPGRADES, ZONE_PASSES, makeRequest } from '../data/shop.js';
+import { GUARDIANS } from '../data/creatures.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -78,7 +81,10 @@ export class Game {
     this.eggs = [];    // eggs I'm carrying (max 3)
     this.pendingEvo = [];
     this.ranch = [];   // shared ranch storage (host) — creatures that didn't fit in a party
-    this.stats = { wins: 0 };
+    this.stats = { wins: 0, requests: 0 };
+    this.upgrades = {};             // shared ranch upgrades (level per id)
+    this.requests = [];             // notice board
+    this.guardiansCalmed = new Set();
     this.rating = { level: 0, points: 0, breakdown: [] };
     this.unlocked = new Set(['meadow']);
     this.landmarks = new Set();
@@ -124,6 +130,8 @@ export class Game {
     this.ranchSim = new RanchSim(this);
     this.buildMode = new BuildMode(uiRoot, this);
     this.barn = new BarnPanel(uiRoot, this);
+    this.shop = new ShopPanel(uiRoot, this);
+    this.board = new BoardPanel(uiRoot, this);
 
     this._wirePlayer();
     this._wireNet();
@@ -221,6 +229,8 @@ export class Game {
     net.on('build', (m) => { if (this.guestActor) this.buildings.place(this.guestActor, m.type, m.x, m.z, m.rot); });
     net.on('demolish', (m) => { if (this.guestActor) this.buildings.demolish(this.guestActor, m.id); });
     net.on('rmove', (m) => { if (this.guestActor) this._ranchMove(this.guestActor, m.uid, m.act); });
+    net.on('shop', (m) => { if (this.guestActor) this._shop(this.guestActor, m.op, m.id, m.n); });
+    net.on('board', (m) => { if (this.guestActor) this._board(this.guestActor, m.op, m.i); });
     net.on('hit', (m) => {
       const def = this.interactions.byId.get(m.id);
       if (def?.hit && this.guestActor && this._guestNear(def)) def.hit(this.guestActor, m.tool);
@@ -413,7 +423,7 @@ export class Game {
   /** Host: an actor's inventory changed by a ranch action. */
   inventoryChanged(actor) {
     if (actor?.id === 'guest') this.net.send({ t: 'inv', inv: actor.inventory });
-    else { this.hud.refreshCounts(); if (this.panel.open) this.panel.render(); if (this.buildMode.active) this.buildMode.render(); }
+    else { this.hud.refreshCounts(); if (this.panel.open) this.panel.render(); if (this.buildMode.active) this.buildMode.render(); if (this.shop.open) this.shop.render(); if (this.board.open) this.board.render(); }
   }
 
   /** Host: buildings / ranch members / drops / messes changed. */
@@ -423,6 +433,7 @@ export class Game {
     return {
       b: this.buildings.serialize(), st: this.ranchSim.state(), cap: this.ranchCapacity(),
       list: this.ranch.map((c) => ({ uid: c.uid, species: c.species, level: c.level, shiny: c.shiny, nickname: c.nickname, happiness: Math.round(c.happiness ?? 70), role: c.role || null, xp: c.xp })),
+      up: this.upgrades, req: this.requests, gc: [...this.guardiansCalmed], stats: this.stats, unlocked: [...this.unlocked],
     };
   }
 
@@ -432,7 +443,14 @@ export class Game {
     this.ranchSim.applyState(r.st || {});
     this.ranchSummary = r.list || [];
     this.guestCap = r.cap;
+    this.upgrades = r.up || {};
+    this.requests = r.req || [];
+    this.guardiansCalmed = new Set(r.gc || []);
+    if (r.stats) this.stats = r.stats;
+    for (const id of r.unlocked || []) if (!this.unlocked.has(id)) { this.unlocked.add(id); this.world.setUnlocked(id, true); }
     if (this.barn.open) this.barn.render();
+    if (this.shop.open) this.shop.render();
+    if (this.board.open) this.board.render();
   }
 
   ranchList() { return this.isGuest ? (this.ranchSummary || []) : this.ranch; }
@@ -443,8 +461,11 @@ export class Game {
     this._ranchDirty = false;
     this.ranchSim.syncCreatures();
     this.ranchSim._applyObjects();
+    this.ensureRequests();
     if (this.net.connected) this.net.send({ t: 'ranch', r: this._ranchMsg() });
     if (this.barn.open) this.barn.render();
+    if (this.shop.open) this.shop.render();
+    if (this.board.open) this.board.render();
     this.updateRating();
     this._saveSoon = 3;
   }
@@ -516,6 +537,132 @@ export class Game {
     else this.buildings.demolish(this.local, id);
   }
 
+  // --- shop, notice board, upgrades, guardians ----------------------------------------------
+
+  get shopOpen() { return this.shop.open || this.board.open; }
+
+  openModal(which) {
+    const m = which === 'shop' ? this.shop : this.board;
+    m.toggle(true);
+    this.audio.play('open');
+    this.input.exitLock();
+  }
+
+  closeModals() {
+    this.shop.toggle(false);
+    this.board.toggle(false);
+    this.input.requestLock();
+  }
+
+  troughMax() { return this.upgrades.trough ? 20 : 10; }
+  eggCap() { return this.upgrades.satchel ? 6 : 3; }
+
+  requestShop(op, id, n) {
+    if (this.isGuest) this.net.send({ t: 'shop', op, id, n });
+    else this._shop(this.local, op, id, n);
+  }
+
+  _shop(actor, op, id, n) {
+    const inv = actor.inventory;
+    const pay = (price) => {
+      if (inv.coins < price) { actor.toast(`Not enough coins (need 🪙 ${price}).`, 'bad'); return false; }
+      inv.coins -= price; return true;
+    };
+    if (op === 'buy') {
+      const s = SUPPLIES.find((x) => x.id === id);
+      if (!s || !pay(s.price)) return;
+      inv[s.item] = (inv[s.item] || 0) + s.n;
+      actor.toast(`Bought ${s.label}!`, 'good');
+    } else if (op === 'upgrade') {
+      const u = UPGRADES[id];
+      const lvl = this.upgrades[id] || 0;
+      if (!u || lvl >= u.max || !pay(u.price[lvl])) return;
+      this.upgrades[id] = lvl + 1;
+      this.sharedBanner(`${u.icon} ${u.name}${u.max > 1 ? ` Lv ${lvl + 1}` : ''}!`, `${actor.name} upgraded the ranch: ${u.desc}`, '#ffd166', 'chime');
+      this.ranchChanged();
+    } else if (op === 'zone') {
+      const price = ZONE_PASSES[id];
+      if (!price || this.unlocked.has(id) || !pay(price)) return;
+      this.unlocked.add(id);
+      this.world.setUnlocked(id, true);
+      this.worldEvent({ t: 'unlock', id });
+      this.sharedBanner(`${ZONES[id].name} is open!`, `${actor.name} bought a Zone Pass — go explore!`, ZONES[id].color, 'zone');
+      this.ranchChanged();
+    } else if (op === 'sell') {
+      const it = ITEMS[id];
+      const have = inv[id] || 0;
+      const k = Math.min(have, n || 1);
+      if (!it?.sell || !k) return;
+      inv[id] -= k; inv.coins += k * it.sell;
+      actor.toast(`Sold ${k} ${it.name} for 🪙 ${k * it.sell}`, 'good');
+    } else if (op === 'sellAll') {
+      this.sellAll(actor);
+    }
+    if (actor === this.local) this.audio.play('coin');
+    this.inventoryChanged(actor);
+    this.ranchChanged();
+  }
+
+  /** Host: keep three requests on the board. */
+  ensureRequests() {
+    while (this.requests.length < 3) this.requests.push(makeRequest(this.rating.level));
+  }
+
+  requestBoard(op, i) {
+    if (this.isGuest) this.net.send({ t: 'board', op, i });
+    else this._board(this.local, op, i);
+  }
+
+  _board(actor, op, i) {
+    const r = this.requests[i];
+    if (!r) return;
+    const inv = actor.inventory;
+    if (op === 'reroll') {
+      if (inv.coins < 5) { actor.toast('Swapping a request costs 🪙 5.', 'bad'); return; }
+      inv.coins -= 5;
+      this.requests[i] = makeRequest(this.rating.level);
+      this.inventoryChanged(actor);
+      this.ranchChanged();
+      return;
+    }
+    // deliver
+    if (r.kind === 'bring') {
+      if ((inv[r.item] || 0) < r.n) { actor.toast(`You need ${r.n} ${ITEMS[r.item].name} (you have ${inv[r.item] || 0}).`, 'bad'); return; }
+      inv[r.item] -= r.n;
+    } else if (r.kind === 'show') {
+      const ok = actor.party.some((c) => SPECIES_BY_ID[c.species].type === r.type && c.level >= r.level);
+      if (!ok) { actor.toast(`None of your party is a ${TYPES[r.type].name}-type at Lv ${r.level}+. (Swap creatures at the Barn.)`, 'bad'); return; }
+    } else if (r.kind === 'species') {
+      if (!actor.party.some((c) => c.species === r.species)) { actor.toast(`Bring a ${SPECIES_BY_ID[r.species].name} in your party.`, 'bad'); return; }
+    }
+    inv.coins += r.reward;
+    this.stats.requests = (this.stats.requests || 0) + 1;
+    this.requests[i] = makeRequest(this.rating.level);
+    this.sharedBanner('📋 Request complete!', `${actor.name} helped ${r.who} — 🪙 ${r.reward}`, '#06d6a0', 'coin');
+    this.inventoryChanged(actor);
+    this.ranchChanged();
+    this.updateRating();
+  }
+
+  /** Host: a zone guardian was calmed in battle. */
+  guardianCalmed(c, actors) {
+    const zone = c.guardian;
+    c.calmed = true;
+    if (this.guardiansCalmed.has(zone)) return;
+    this.guardiansCalmed.add(zone);
+    this.markCaught(c.sp.id);
+    const reward = 100 + GUARDIANS[zone].level * 10;
+    for (const a of actors) { a.inventory.coins += reward; a.give('orb', 5); this.inventoryChanged(a); }
+    this.sharedBanner(`🌟 ${c.sp.name} is at peace!`, `The guardian of ${ZONES[zone].name} thanks you (+15 rating, 🪙 ${reward} and 5 Bond Orbs each)`, ZONES[zone].color, 'chime');
+    this.worldFx('sparkle', c.center.clone(), 0xffe066);
+    if (this.guardiansCalmed.size === 4) {
+      setTimeout(() => this.sharedBanner('🏆 All four guardians are calm!', 'The whole land is at peace. Your ranch is legendary!', '#ffd166', 'chime'), 4500);
+    }
+    this.updateRating();
+    this.ranchChanged();
+    this.save();
+  }
+
   // --- evolution ---------------------------------------------------------------------------
 
   /** Host: check this creature for evolution soon (not mid-battle). actor may be null. */
@@ -577,6 +724,7 @@ export class Game {
     const { points, breakdown } = ratingPoints({
       seen: this.dex.seen.size, caught: this.dex.caught.size, creatures, landmarks: this.landmarks.size, wins: this.stats.wins,
       buildings: this.buildings.map.size, happy: this.ranchSim.happyCount(),
+      requests: this.stats.requests || 0, guardians: this.guardiansCalmed.size,
     });
     const before = this.rating.level;
     const info = ratingInfo(points);
@@ -589,6 +737,9 @@ export class Game {
     if (info.level > before && !silent) {
       this.sharedBanner(`⭐ Ranch Rating ${info.level}!`, 'Your ranch is becoming famous', '#ffd166', 'chime');
       this.worldFx('sparkle', this.player.pos.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xffd166);
+      if (info.next === null && !this.dex.caught.has('solstara')) {
+        setTimeout(() => this.sharedBanner('✨ A legendary visitor has arrived!', 'Solstara was spotted near the Sunstone Spire in Breezy Meadow — befriend it together!', '#ff9e00', 'chime'), 4200);
+      }
     }
     this._unlockForRating(silent);
   }
@@ -888,7 +1039,10 @@ export class Game {
     if (d?.player) this.player.teleport(d.player.x, d.player.z, d.player.yaw);
     else this.player.teleport(0, 16, 0);
     this.player.zone = this.world.zoneAt(this.player.pos.x, this.player.pos.z);
-    this.stats = { wins: 0, ...(d?.stats || {}) };
+    this.stats = { wins: 0, requests: 0, ...(d?.stats || {}) };
+    this.upgrades = d?.upgrades || {};
+    this.requests = d?.requests || [];
+    this.guardiansCalmed = new Set(d?.guardians || []);
     this.buildings.apply(d?.buildings || []);
     this.ranchSim.clear();
     this.ranchSim.authority = true;
@@ -914,6 +1068,9 @@ export class Game {
       unlocked: [...this.unlocked],
       landmarks: [...this.landmarks],
       stats: this.stats,
+      upgrades: this.upgrades,
+      requests: this.requests,
+      guardians: [...this.guardiansCalmed],
       buildings: this.buildings.serialize(),
       ranchState: this.ranchSim.state(),
       dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
@@ -956,6 +1113,8 @@ export class Game {
     this.catching.pending = [];
     this.buildMode.toggle(false);
     this.barn.toggle(false);
+    this.shop.toggle(false);
+    this.board.toggle(false);
     this.ranchSim.clear();
     this.ranchSim.authority = true;
     this.buildings.apply([]);
@@ -975,8 +1134,9 @@ export class Game {
   }
 
   _onLock(locked) {
-    if (locked) { this.pause.show(false); return; }
-    if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open && !this.barn.open) {
+    if (locked) { this.pause.show(false); this.battleCursor = false; return; }
+    if (this.battleCursor) return; // freed on purpose to click battle moves
+    if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open && !this.barn.open && !this.shopOpen) {
       this.state = 'paused';
       this.pause.show(true);
     }
@@ -1094,10 +1254,23 @@ export class Game {
     if (this.isAuthority) { this.battles.update(dt); this.catching.update(dt); this._regen(dt); }
     this.battleView.update(dt);
     const myBattle = this.myBattle;
+    // When it's my turn to pick a move, free the mouse so the move buttons can be clicked.
+    const meAlly = myBattle?.allies.find((a) => a.owner === this.myId && a.hp > 0);
+    const myTurn = !!(myBattle && myBattle.phase === 'choose' && meAlly && !meAlly.chose);
+    if (myTurn && this.state === 'playing' && input.locked && !this.panel.open && !this.chat.open) {
+      const key = myBattle.id + ':' + myBattle.turn;
+      if (this._cursorTurn !== key) { this._cursorTurn = key; this.battleCursor = true; input.exitLock(); }
+    }
     this.battleHUD.update(myBattle, this.myId);
-    if (myBattle && active) {
-      for (let i = 0; i < 4; i++) if (input.wasPressed('Digit' + (i + 1))) this.requestMove(i);
-      if (input.wasPressed('KeyR')) this.requestRun();
+    const canPick = this.state === 'playing' && !this.panel.open && !this.chat.open && (active || this.battleCursor);
+    if (myBattle && canPick) {
+      for (let i = 0; i < 4; i++) if (input.pressedAny('Digit' + (i + 1))) { this.requestMove(i); if (!input.locked) input.requestLock(); }
+      if (input.pressedAny('KeyR')) { this.requestRun(); if (!input.locked) input.requestLock(); }
+    }
+    // battle ended while the cursor was free: wait for a click to keep playing
+    if (!myBattle && this.battleCursor && !input.locked) {
+      this.battleCursor = false;
+      if (this.state === 'playing') { this.state = 'paused'; this.pause.show(true); }
     }
     this.ranchSim.update(dt);
     this.buildings.update(this.world.sky.night, dt);
@@ -1114,6 +1287,7 @@ export class Game {
 
     // look-at + interact (tap E = use, hold E on creatures = pet)
     const barnWasOpen = this.barn.open;
+    const modalWasOpen = this.shopOpen;
     const target = active ? this.interactions.update() : null;
     const inRange = this.interactions.inUseRange(target);
     this.hud.setLook(target, target ? this.interactions.subtitle(target) : '');
@@ -1132,6 +1306,7 @@ export class Game {
     }
     this.hud.setHold(this._hold ? Math.min(1, this._hold.t) : 0);
     if (barnWasOpen && this.barn.open && (input.pressedAny('Escape') || input.pressedAny('KeyE') || input.pressedAny('Tab'))) this.closeBarn();
+    if (modalWasOpen && this.shopOpen && (input.pressedAny('Escape') || input.pressedAny('KeyE') || input.pressedAny('Tab'))) this.closeModals();
 
     // Dex: anything you look at, or that comes close, counts as seen
     if (target?.speciesId) this.markSeen(target.speciesId);

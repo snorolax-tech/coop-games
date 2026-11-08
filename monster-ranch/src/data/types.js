@@ -60,4 +60,5 @@ export const RARITY = {
   uncommon:  { name: 'Uncommon',  stars: 2, color: '#06d6a0', weight: 4 },
   rare:      { name: 'Rare',      stars: 3, color: '#9b5de5', weight: 1 },
   legendary: { name: 'Legendary', stars: 4, color: '#ffb703', weight: 0 },
+  guardian:  { name: 'Guardian',  stars: 5, color: '#ef476f', weight: 0 },
 };

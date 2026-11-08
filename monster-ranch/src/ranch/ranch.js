@@ -137,7 +137,7 @@ class RanchCreature {
       this.moodT = 10;
       let d = 0;
       if (inst.hunger > 50) d += 0.6; else if (inst.hunger < 20) d -= 2;
-      if (this.penId != null) d += s.messCount(this.penId) >= 2 ? -1.5 : 0.5; else d -= 0.2;
+      if (this.penId != null) d += s.messCount(this.penId) >= 2 ? -1.5 : (g.upgrades.hay ? 1.2 : 0.5); else d -= 0.2;
       d += Math.min(1.2, g.buildings.decorCount() * 0.15);
       if (this.sp.type === 'splash' && g.buildings.ponds().length) d += 0.5;
       this.happy(d);
@@ -269,7 +269,7 @@ export class RanchSim {
     this._q = [];
   }
 
-  get capacity() { return RANCH_BASE_CAPACITY + PEN_CAPACITY * this.game.buildings.pens().length; }
+  get capacity() { return RANCH_BASE_CAPACITY + PEN_CAPACITY * this.game.buildings.pens().length + 4 * (this.game.upgrades.expansion || 0); }
 
   randomHubSpot() {
     for (let i = 0; i < 30; i++) {
@@ -441,7 +441,8 @@ export class RanchSim {
     const i = this.eggs.findIndex((e) => e.id === id);
     if (i < 0) return;
     actor.eggs = actor.eggs || [];
-    if (actor.eggs.length >= 3) { actor.toast('You can only carry 3 eggs.', 'muted'); return; }
+    const cap = this.game.eggCap();
+    if (actor.eggs.length >= cap) { actor.toast(`You can only carry ${cap} eggs.${cap < 6 ? ' (The Egg Satchel upgrade holds 6.)' : ''}`, 'muted'); return; }
     actor.eggs.push(this.eggs[i].egg);
     this.eggs.splice(i, 1);
     actor.toast('🥚 You picked up an egg! Take it to an Incubator (E).', 'good');

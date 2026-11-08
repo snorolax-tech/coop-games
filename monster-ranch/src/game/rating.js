@@ -14,6 +14,8 @@ export const SOURCES = {
   wins:      { label: 'Battles won',             pts: 1, cap: 30 },
   buildings: { label: 'Ranch buildings',         pts: 2, cap: 25 },
   happy:     { label: 'Happy ranch creatures (♥70+)', pts: 2 },
+  requests:  { label: 'Notice board requests',   pts: 2, cap: 20 },
+  guardians: { label: 'Zone guardians calmed',   pts: 15 },
 };
 
 /** counts: { seen, caught, creatures, landmarks, wins } -> { points, breakdown } */

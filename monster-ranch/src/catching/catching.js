@@ -18,6 +18,7 @@ export class Catching {
     if (c.captured || c.fainted) return 'bounce';
     const actor = g.actorById(p.owner);
     if (!actor) return 'bounce';
+    if (c.guardian) { actor.toast(`${c.sp.name} is a Zone Guardian — it can't be caught. Calm it in battle instead!`, 'muted'); return 'bounce'; }
     const sp = c.sp;
     const battle = c.battleId ? g.battles.battles.get(c.battleId) : null;
 

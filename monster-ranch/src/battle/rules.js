@@ -4,8 +4,8 @@ import { SPECIES_BY_ID } from '../data/creatures.js';
 import { effectiveness } from '../data/types.js';
 import { calcStats } from '../creatures/instance.js';
 
-export const RARITY_CATCH = { common: 0.85, uncommon: 0.6, rare: 0.4, legendary: 0.2 };
-const RARITY_XP = { common: 50, uncommon: 80, rare: 130, legendary: 220 };
+export const RARITY_CATCH = { common: 0.85, uncommon: 0.6, rare: 0.4, legendary: 0.25, guardian: 0 };
+const RARITY_XP = { common: 50, uncommon: 80, rare: 130, legendary: 220, guardian: 400 };
 
 export function stageMul(s) { return s >= 0 ? (2 + s) / 2 : 2 / (2 - s); }
 

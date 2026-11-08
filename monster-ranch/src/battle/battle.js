@@ -192,8 +192,13 @@ class Battle {
   _faint(b) {
     const name = nameOf(b.inst);
     if (b.side === 'foe') {
-      this.say(`The wild ${name} fainted and wanders off dazed.`);
-      this.mgr.emit({ b: this.id, faint: b.key, text: `The wild ${name} fainted!` });
+      if (b.wild.guardian) {
+        this.say(`${name} calms down at last… 🌟`);
+        this.mgr.emit({ b: this.id, text: `${name} is calm!` });
+      } else {
+        this.say(`The wild ${name} fainted and wanders off dazed.`);
+        this.mgr.emit({ b: this.id, faint: b.key, text: `The wild ${name} fainted!` });
+      }
       const xp = xpReward(b.inst);
       for (const a of this.allies) {
         if (a.inst.hp <= 0) continue;
@@ -209,6 +214,7 @@ class Battle {
         this.mgr.partyChanged(a.actor);
       }
       this.foes = this.foes.filter((f) => f !== b);
+      if (b.wild.guardian) this.game.guardianCalmed(b.wild, [...new Set(this.allies.map((a) => a.actor))]);
       this.mgr.releaseFoe(b.wild, 'fainted');
     } else {
       this.say(`${name} fainted!`);
@@ -291,6 +297,7 @@ export class BattleManager {
     if (!lead) { actor.toast(actor.party.length ? 'Your creatures are worn out — rest at the Farmhouse.' : 'You need a partner creature first!', 'muted'); return; }
     const c = g.creatures.list.get(nid);
     if (!c || c.captured || c.fainted) return;
+    if (c.guardian && c.calmed) { actor.toast(`${c.sp.name} is already calm and friendly ♥`, 'muted'); return; }
     const pos = this.posOf(actor.id);
     if (pos && pos.distanceTo(c.pos) > 30) { actor.toast('Too far away — get closer!', 'muted'); return; }
 
@@ -339,6 +346,7 @@ export class BattleManager {
 
   releaseFoe(c, why) {
     c.battleId = null;
+    if (c.guardian) { c.inst.hp = c.inst.stats.hp; c.cooldown = 5; c.setState('idle', 2); return; }
     if (why === 'fainted') this.game.creatures.faint(c);
     else { c.cooldown = 8; c.setState('idle', 1); }
   }

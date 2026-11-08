@@ -163,7 +163,38 @@ export const SPECIES = [
     habitat: [], time: 'any',
     desc: 'A legendary sunbird said to visit only the most beloved ranches.',
     model: { plan: 'bird', size: 2.6, body: '#fff1a8', belly: '#ffffff', accent: '#ff9e00', tail: 'fan', features: ['crest', 'gem', 'glowTail'], glow: true } },
+
+  // ---------------- Zone guardians (bosses: calm them in battle) ----------------
+  { id: 'galeheart', name: 'Galeheart', type: 'breeze', rarity: 'guardian', personality: 'grumpy', guardian: 'meadow',
+    base: { hp: 110, atk: 80, def: 80, spd: 85 }, moves: ['cyclone', 'wingslice', 'tailwind', 'headbutt'],
+    habitat: [], time: 'any',
+    desc: 'Guardian of Breezy Meadow. A towering stag whose antlers hum with wind. Something has made it restless.',
+    model: { plan: 'quad', size: 4.2, legs: 0.5, body: '#cfe8ff', belly: '#ffffff', accent: '#7ae7ff', ears: 'pointy', tail: 'fluffy', features: ['horns', 'mane', 'gem', 'wisps'], glow: true } },
+  { id: 'elderbark', name: 'Elderbark', type: 'leaf', rarity: 'guardian', personality: 'grumpy', guardian: 'forest',
+    base: { hp: 130, atk: 90, def: 110, spd: 40 }, moves: ['petalstorm', 'vinewhip', 'rootheal', 'quakestomp'],
+    habitat: [], time: 'any',
+    desc: 'Guardian of Whisperwood. An ancient walking tree that has slept for a hundred years — until now.',
+    model: { plan: 'biped', size: 4.0, body: '#6b4f3a', belly: '#a98467', accent: '#52b788', features: ['leafCape', 'mossy', 'flower', 'horns'] } },
+  { id: 'tidecrown', name: 'Tidecrown', type: 'splash', rarity: 'guardian', personality: 'grumpy', guardian: 'lakeside',
+    base: { hp: 125, atk: 95, def: 90, spd: 80 }, moves: ['hydroburst', 'tidalslam', 'raindance', 'gust'],
+    habitat: [], time: 'any',
+    desc: 'Guardian of Glimmer Lake. A crowned sea-serpent who rises from the lake when the water is troubled.',
+    model: { plan: 'serpent', size: 3.6, body: '#0096c7', belly: '#caf0f8', accent: '#ffd166', features: ['crest', 'gem', 'wisps'], glow: true } },
+  { id: 'pyrokhan', name: 'Pyrokhan', type: 'flame', rarity: 'guardian', personality: 'grumpy', guardian: 'volcano',
+    base: { hp: 140, atk: 115, def: 100, spd: 70 }, moves: ['infernoroar', 'heatwave', 'quakestomp', 'smolder'],
+    habitat: [], time: 'any',
+    desc: 'Guardian of the Cinder Hills. A lava-maned lion-beast whose roar shakes the volcano.',
+    model: { plan: 'quad', size: 4.4, legs: 0.42, body: '#5a2a27', belly: '#ff6b35', accent: '#ffba08', ears: 'pointy', tail: 'flame', features: ['mane', 'flameHead', 'horns', 'plates'] } },
 ];
+
+// Guardian lairs (one per wild zone) and their levels.
+export const GUARDIANS = {
+  meadow:   { species: 'galeheart', level: 16, x: -40, z: -262 },
+  forest:   { species: 'elderbark', level: 24, x: 245, z: 72 },
+  lakeside: { species: 'tidecrown', level: 32, x: 0, z: 222 },
+  volcano:  { species: 'pyrokhan',  level: 40, x: -185, z: 45 },
+};
+export const LEGENDARY = { species: 'solstara', level: 45, zone: 'meadow', x: 52, z: -190 };
 
 SPECIES.forEach((s, i) => { s.num = i + 1; });
 export const SPECIES_BY_ID = Object.fromEntries(SPECIES.map((s) => [s.id, s]));

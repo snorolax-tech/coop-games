@@ -5,7 +5,8 @@
 // Personalities: shy -> runs away, playful -> curious, follows you, grumpy -> charges,
 // lazy -> barely notices you and naps a lot.
 import * as THREE from 'three';
-import { SPECIES, SPECIES_BY_ID, ZONE_LEVELS } from '../data/creatures.js';
+import { SPECIES, SPECIES_BY_ID, ZONE_LEVELS, GUARDIANS, LEGENDARY } from '../data/creatures.js';
+import { MAX_RATING } from '../game/rating.js';
 import { TYPES, PERSONALITIES, RARITY } from '../data/types.js';
 import { WILD_ZONES, ZONE_R, WORLD_R } from '../world/zones.js';
 import { WATER_Y } from '../world/terrain.js';
@@ -48,6 +49,8 @@ class WildCreature {
     this.target = new THREE.Vector3(x, 0, z);
     this.focus = null;   // observer we're reacting to
     this.swims = this.sp.type === 'splash';
+    this.guardian = this.sp.guardian || null; // zone id for zone guardians
+    this.calmed = false;
 
     const view = buildCreatureModel(this.sp, { shiny: inst.shiny });
     this.view = view;
@@ -71,6 +74,10 @@ class WildCreature {
       range: 40,
       useRange: 3.5,
       sub: () => {
+        if (this.guardian) {
+          if (this.calmed) return `🌟 Zone Guardian  ·  ♥ Calm and friendly${mgr.game.interactions.hitDist <= 6 ? '   —   E  Thank it' : ''}`;
+          return `🌟 Zone Guardian  ·  ${t.icon} ${t.name}  ·  ${this.battleId || this.inBattle ? `⚔️ ${this.inst.hp}/${this.inst.stats.hp} HP` : 'Restless — send out your partner (6) to calm it'}`;
+        }
         const bits = [`${t.icon} ${t.name}`, `${pers.icon} ${pers.name}`];
         if (this.sp.rarity !== 'common') bits.push('★'.repeat(RARITY[this.sp.rarity].stars) + ' ' + RARITY[this.sp.rarity].name);
         if (this.battleId || this.inBattle) bits.push(`⚔️ ${this.inst.hp}/${this.inst.stats.hp} HP`);
@@ -150,6 +157,11 @@ class WildCreature {
 
   pet(actor) {
     if (this.battleId || this.captured || this.fainted) return;
+    if (this.guardian) {
+      if (this.calmed) { this.say('♥', 2); this.cry('happy'); actor.toast(`${this.sp.name} rumbles happily. The zone feels peaceful.`, 'good'); }
+      else { this.say('💢', 1.4); this.cry('angry'); actor.toast(`${this.sp.name} is too restless to touch — calm it in battle first!`, 'bad'); }
+      return;
+    }
     const obs = this.mgr.observerFor(actor);
     if (this.sleeping) {
       this.sleeping = false;
@@ -196,6 +208,22 @@ class WildCreature {
     this.cry('happy');
     this.mgr.game.worldFx('sparkle', this.center.clone(), 0xffd6e8);
     this.setState('idle', 3);
+  }
+
+  /** Guardians stay near their lair: pace around, watch rancher, roar (or purr once calmed). */
+  _guardianThink(dt) {
+    const near = this.mgr.nearestObserver(this.pos);
+    if (near && near.dist < 26) {
+      const f = near.obs.pos;
+      const d = angDiff(Math.atan2(f.x - this.pos.x, f.z - this.pos.z), this.yaw);
+      this.yaw += d * Math.min(1, dt * 2);
+      if (Math.random() < dt * 0.12) { this.say(this.calmed ? '♥' : '💢', 1.6); this.cry(this.calmed ? 'happy' : 'angry'); }
+      this.excited = this.calmed ? 0.6 : 0;
+      return;
+    }
+    if (this.stateT <= 0) { this._pickWander(); this.target.lerp(this.home, 0.6); this.stateT = 6 + Math.random() * 6; }
+    const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
+    if (Math.hypot(dx, dz) > 1) this._move(dx, dz, 1.2, dt);
   }
 
   _move(dx, dz, speed, dt) {
@@ -253,6 +281,7 @@ class WildCreature {
       return;
     }
     if (this.battleId) { this.excited = 0.3; this._placeY(); return; }
+    if (this.guardian) { this._guardianThink(dt); this._placeY(); return; }
 
     // notice players
     const near = this.mgr.nearestObserver(this.pos);
@@ -390,6 +419,19 @@ export class WildCreatures {
         if (p) this.slots.push({ zone, x: p.x, z: p.z, creature: null, cool: rand() * 5 });
       }
     }
+    // a guardian lair in every wild zone, plus the legendary visitor's perch
+    for (const [zone, gd] of Object.entries(GUARDIANS)) {
+      this.slots.push({ zone, x: gd.x, z: gd.z, creature: null, cool: 0, special: 'guardian', species: gd.species, level: gd.level });
+      this.game.world.reserve(gd.x, gd.z, 8);
+    }
+    this.slots.push({ zone: LEGENDARY.zone, x: LEGENDARY.x, z: LEGENDARY.z, creature: null, cool: 0, special: 'legendary', species: LEGENDARY.species, level: LEGENDARY.level });
+  }
+
+  /** Is this special slot allowed to have its creature right now? */
+  _specialActive(slot) {
+    const g = this.game;
+    if (slot.special === 'legendary') return g.rating.level >= MAX_RATING && !g.dex.caught.has(slot.species);
+    return true;
   }
 
   /** Everyone who can be noticed: the local player and the remote player (host only). */
@@ -429,6 +471,18 @@ export class WildCreatures {
   }
 
   _spawn(slot, night) {
+    if (slot.special) {
+      if (!this._specialActive(slot)) return;
+      const inst = createCreature(slot.species, slot.level, { personality: slot.special === 'guardian' ? 'grumpy' : 'shy' });
+      if (slot.special === 'guardian') { inst.stats.hp *= 3; inst.hp = inst.stats.hp; }
+      const c = new WildCreature(this, this.nextId++, inst, slot.x, slot.z, slot.zone);
+      c.slot = slot;
+      c.calmed = !!(c.guardian && this.game.guardiansCalmed.has(c.guardian));
+      slot.creature = c;
+      this.list.set(c.nid, c);
+      if (slot.special === 'legendary') this.game.toast('✨ You sense something legendary nearby…', 'good');
+      return;
+    }
     const sp = this._pickSpecies(slot.zone, night);
     if (!sp) return;
     const [lo, hi] = ZONE_LEVELS[slot.zone];
@@ -489,13 +543,14 @@ export class WildCreatures {
         for (const o of this._obs) d = Math.min(d, Math.hypot(o.pos.x - s.x, o.pos.z - s.z));
         if (!s.creature) {
           s.cool -= dt;
-          if (s.cool <= 0 && d < SPAWN_DIST && d > 25) this._spawn(s, night);
+          if (s.cool <= 0 && d < SPAWN_DIST && (d > 25 || s.special)) this._spawn(s, night);
         } else {
           const c = s.creature;
           const cd = this.nearestObserver(c.pos)?.dist ?? Infinity;
           const wrongTime = c.sp.time === 'night' && !night && cd > 50;
           if (c.battleId || c.captured || c.fainted) continue;
-          if ((cd > DESPAWN_DIST && c.state !== 'flee') || wrongTime) this._despawn(c);
+          if (s.special && !this._specialActive(s)) { this._despawn(c); s.cool = 0; continue; }
+          if ((cd > DESPAWN_DIST && c.state !== 'flee') || wrongTime) { this._despawn(c); if (s.special) s.cool = 0; }
         }
       }
       for (const c of this.list.values()) c.think(dt, this._obs, night);
@@ -527,7 +582,7 @@ export class WildCreatures {
   snapshot() {
     const out = [];
     for (const c of this.list.values()) {
-      const flags = (c.inst.shiny ? 1 : 0) | (c.sleeping ? 2 : 0) | (c.fainted ? 4 : 0) | (c.captured ? 8 : 0) | (c.battleId ? 16 : 0) | (c.calmT > 0 ? 32 : 0);
+      const flags = (c.inst.shiny ? 1 : 0) | (c.sleeping ? 2 : 0) | (c.fainted ? 4 : 0) | (c.captured ? 8 : 0) | (c.battleId ? 16 : 0) | (c.calmT > 0 ? 32 : 0) | (c.calmed ? 64 : 0);
       out.push([c.nid, c.sp.num, c.inst.level, flags, PERSONALITY_IDS.indexOf(c.inst.personality),
         Math.round(c.pos.x * 100) / 100, Math.round(c.pos.y * 100) / 100, Math.round(c.pos.z * 100) / 100,
         Math.round(c.yaw * 100) / 100, Math.round(c.speed * 10), Math.round(c.excited * 10), c.inst.hp]);
@@ -556,6 +611,7 @@ export class WildCreatures {
       c.captured = !!(flags & 8);
       c.inBattle = !!(flags & 16);
       c.calm = !!(flags & 32);
+      c.calmed = !!(flags & 64);
       if (hp !== undefined) c.inst.hp = hp;
       c.excited = exc / 10;
     }

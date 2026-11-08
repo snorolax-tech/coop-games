@@ -29,22 +29,27 @@ export class BattleHUD {
       <div class="bsides"><div class="ballies"></div><div class="bvs">VS</div><div class="bfoes"></div></div>
       <div class="blog"></div>
       <div class="bmoves"></div>
-      <div class="bhint">Weaken it, then scroll to a 🔵 Bond Orb and throw it to befriend! · <b>R</b> Run</div>
+      <div class="bfoot">
+        <div class="bhint">Click a move (or press 1-4). To befriend: <b>click the game</b> to aim, scroll to a 🔵 Bond Orb and throw it!</div>
+        <button class="bmove brun" data-run="1"><b>R</b> 🏃 Run</button>
+      </div>
     </div>`);
     root.appendChild(this.el);
     this.el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-move]');
-      if (btn) game.requestMove(+btn.dataset.move);
+      if (btn) { game.requestMove(+btn.dataset.move); game.input.requestLock(); return; }
+      if (e.target.closest('[data-run]')) { game.requestRun(); game.input.requestLock(); }
     });
     this.sig = '';
   }
 
   update(battle, myId) {
     if (!battle) { this.el.classList.add('hidden'); this.sig = ''; return; }
-    const sig = JSON.stringify(battle) + myId;
+    const sig = JSON.stringify(battle) + myId + this.game.input.locked;
     if (sig === this.sig) return;
     this.sig = sig;
     this.el.classList.remove('hidden');
+    this.el.classList.toggle('cursor', !this.game.input.locked);
     this.el.querySelector('.ballies').innerHTML = battle.allies.map((a) => card(a, a.owner === myId)).join('');
     this.el.querySelector('.bfoes').innerHTML = battle.foes.map((f) => card(f, false)).join('');
     this.el.querySelector('.blog').innerHTML = battle.log.map((l, i) => `<div class="${i === battle.log.length - 1 ? 'last' : ''}">${l}</div>`).join('');

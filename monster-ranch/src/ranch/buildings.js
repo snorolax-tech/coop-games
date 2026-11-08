@@ -312,7 +312,7 @@ export class Buildings {
 
   subtitle(e) {
     const g = this.game;
-    if (e.type === 'trough') return `Food ${e.food}/10   —   E  Fill with berries`;
+    if (e.type === 'trough') return `Food ${e.food}/${g.troughMax()}   —   E  Fill with berries`;
     if (e.type === 'incubator') {
       if (e.egg) return `Warming an egg… ${Math.min(99, Math.floor((e.hatchT || 0) / HATCH_TIME * 100))}%`;
       return (g.eggs?.length ? `E  Place your egg (${g.eggs.length} carried)` : 'Empty — bring an egg from the Breeding Pen');
@@ -331,7 +331,7 @@ export class Buildings {
     if (e.type === 'incubator') { this.game.ranchSim.incubate(actor, e); return; }
     if (e.type !== 'trough') return;
     const inv = actor.inventory;
-    const space = 10 - e.food;
+    const space = this.game.troughMax() - e.food;
     if (space <= 0) { actor.toast('The trough is already full!', 'muted'); return; }
     const berries = Math.min(space, inv.berry || 0);
     const glow = Math.min(space - berries, inv.glowberry || 0);
@@ -348,7 +348,8 @@ export class Buildings {
   _showFood(e) {
     if (e.type !== 'trough') return;
     const food = e.group.getObjectByName('food');
-    food.children.forEach((b, i) => { b.visible = i < e.food; });
+    const shown = Math.ceil((e.food / this.game.troughMax()) * 10);
+    food.children.forEach((b, i) => { b.visible = i < shown; });
   }
 
   update(night, dt = 0) {

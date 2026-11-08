@@ -119,7 +119,7 @@ export class World {
       this._place(s.group, x, z, rot);
       this.colliders.box(x, z, s.hw, s.hd, rot, s.top);
       this.reserve(x, z, 5);
-      I.add({ id: 'shop', root: s.group, name: 'Ranch Shop', sub: 'E  Sell resources', use: (a) => game.sellAll(a) });
+      I.add({ id: 'shop', root: s.group, name: 'Ranch Shop', sub: 'E  Buy supplies & upgrades · sell resources', localUse: () => game.openModal('shop') });
     }
     // notice board
     {
@@ -128,7 +128,7 @@ export class World {
       this._place(nb, x, z, rot);
       this.colliders.box(x, z, 1.6, 0.3, rot, 3);
       this.reserve(x, z, 3);
-      I.add({ id: 'board', root: nb, name: 'Notice Board', sub: 'Requests arrive in Stage 7', use: (a) => a.toast('No requests yet — check back later!', 'muted') });
+      I.add({ id: 'board', root: nb, name: 'Notice Board', sub: 'E  See requests from the neighbours', localUse: () => game.openModal('board') });
     }
     // welcome well in the plaza
     {

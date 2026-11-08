@@ -21,15 +21,15 @@ Open http://localhost:5174. Click **New Ranch**, then click the game to capture 
 |---|---|
 | WASD / Mouse | Move / look |
 | Space / Shift | Jump / sprint |
-| E | Interact (pick berries, touch landmarks, sell at shop, sleep at the farmhouse) |
+| E | Interact (pick berries, touch landmarks, open the Shop / Notice Board / Barn, sleep at the farmhouse) |
 | Left click | Use held item (throw orb/treat, swing tool) |
 | Right click (hold) | Aim: zoom + throw arc preview, accurate throws |
 | 1–6 / wheel | Switch item: Bond Orb, Treat, Brush, Watering Can, Hammer, Partner |
 | 6 then click | Send out your lead partner at the wild creature you're aiming at (starts a battle, or joins your friend's) |
 | Q | Cycle which partner leads |
-| B (on the ranch) | Build mode: 1–8/wheel choose, R rotate, click place, X demolish |
+| B (on the ranch) | Build mode: 1–0/wheel choose, R rotate, click place, X demolish |
 | Tap E / hold E on a ranch creature | Feed (treat if held, else berries) / pet |
-| In battle: 1–4 / R | Pick a move / run away (throw a Bond Orb any time to try to befriend) |
+| In battle | On your turn the mouse is freed: **click a move** (or press 1–4) or **Run** (R). Click the game to aim and throw a Bond Orb |
 | Tab | Inventory / Party / Dex |
 | Esc | Pause (save, export/import, volume, sensitivity) |
 
@@ -43,7 +43,7 @@ Debug: in the browser console, `game.unlockAll()` opens every zone.
 - [x] **4. Ranch**: build mode (pens, troughs, pond, decorations), Barn to move creatures to the ranch, roaming/playing/sleeping ranch creatures, feeding/petting/brushing/cleaning, happiness, resource production
 - [x] **5. Online multiplayer (PeerJS)**: host/join, shared world, avatars, chat (pulled forward; 2v2 battles and co-op catching arrive with stages 3 and 6)
 - [x] **6. Breeding pen → eggs → incubator → hatching (move inheritance, bred shinies), Training Yard XP, evolution by level or happiness, co-op combo moves**
-- [ ] 7. Shop, notice board, more zones, guardians, saving
+- [x] **7. Shop (supplies, shared upgrades, zone passes, selling), Notice Board requests, 4 Zone Guardian boss battles (Galeheart, Elderbark, Tidecrown, Pyrokhan), legendary Solstara at max Ranch Rating (teamwork only), full save/export of everything**
 - [ ] 8. Polish: menus, music, particles, juice
 
 ## Code layout
