@@ -1,5 +1,10 @@
 // Tab panel (Inventory / Party / Creature Dex) and the pause menu.
 import { ITEMS } from '../data/items.js';
+import { SPECIES, SPECIES_BY_ID } from '../data/creatures.js';
+import { TYPES, RARITY, PERSONALITIES, CHART, CREATURE_TYPES, COMBOS, effectiveness } from '../data/types.js';
+import { MOVES } from '../data/moves.js';
+import { ZONES } from '../world/zones.js';
+import { portrait } from '../creatures/portraits.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 
@@ -45,12 +50,100 @@ export class TabPanel {
         <p class="hint">Sell resources at the Ranch Shop stall. Hover an item for details.</p>`;
     } else if (this.tab === 'party') {
       body.innerHTML = `<div class="empty-state"><div class="big">🥚</div><h3>No creatures yet</h3>
-        <p>Creatures roam the wilds in <b>Stage 2</b>, and you can befriend them with Bond Orbs in <b>Stage 3</b>.</p></div>`;
+        <p>Wild creatures are roaming out there now! Befriending them with Bond Orbs arrives in <b>Stage 3</b>.</p></div>`;
     } else {
-      body.innerHTML = `<div class="empty-state"><div class="big">📖</div><h3>Creature Dex</h3>
-        <p>30 original creatures across 6 types are coming in <b>Stage 2</b>. Every creature you see or befriend will be logged here.</p></div>`;
+      this.renderDex(body);
     }
   }
+
+  renderDex(body) {
+    const dex = this.game.dex;
+    if (this.dexView === 'chart') { body.innerHTML = typeChartHTML(); this._wireDexBack(body); return; }
+    if (this.dexSel && dex.seen.has(this.dexSel)) { body.innerHTML = dexDetailHTML(SPECIES_BY_ID[this.dexSel], dex); this._wireDexBack(body); return; }
+    const cards = SPECIES.map((sp) => {
+      const seen = dex.seen.has(sp.id), caught = dex.caught.has(sp.id);
+      const t = TYPES[sp.type];
+      return `<button class="dex-card ${seen ? '' : 'unseen'}" data-sp="${sp.id}">
+        <div class="dex-num">#${String(sp.num).padStart(2, '0')}${caught ? ' <span title="Befriended">💞</span>' : ''}</div>
+        <img src="${portrait(sp.id)}" alt="">
+        <div class="dex-name">${seen ? sp.name : '???'}</div>
+        ${seen ? `<div class="type-badge" style="background:${t.color}">${t.icon} ${t.name}</div>` : '<div class="type-badge unknown">?</div>'}
+      </button>`;
+    }).join('');
+    body.innerHTML = `
+      <div class="dex-head">
+        <div><b>Seen</b> ${dex.seen.size}/${SPECIES.length} · <b>Befriended</b> ${dex.caught.size}/${SPECIES.length}</div>
+        <button class="btn small" data-a="chart">📊 Type Chart</button>
+      </div>
+      <div class="dex-grid">${cards}</div>
+      <p class="hint">Look at a creature (or get close) to log it. The Dex is shared by both ranchers.</p>`;
+    body.querySelector('[data-a=chart]').onclick = () => { this.dexView = 'chart'; this.render(); };
+    body.querySelectorAll('.dex-card').forEach((b) => b.onclick = () => {
+      if (!dex.seen.has(b.dataset.sp)) { this.game.audio.play('locked'); return; }
+      this.dexSel = b.dataset.sp; this.game.audio.play('ui'); this.render();
+    });
+  }
+
+  _wireDexBack(body) {
+    body.querySelector('[data-a=back]').onclick = () => { this.dexSel = null; this.dexView = null; this.render(); };
+  }
+}
+
+function statBar(label, v) {
+  return `<div class="stat"><span>${label}</span><div class="bar"><i style="width:${Math.min(100, (v / 130) * 100)}%"></i></div><b>${v}</b></div>`;
+}
+
+function dexDetailHTML(sp, dex) {
+  const t = TYPES[sp.type];
+  const r = RARITY[sp.rarity];
+  const p = PERSONALITIES[sp.personality];
+  const ch = CHART[sp.type];
+  const weakTo = Object.entries(CHART).filter(([, c]) => c.strong.includes(sp.type)).map(([k]) => TYPES[k]);
+  const moves = sp.moves.map((id) => {
+    const m = MOVES[id]; const mt = TYPES[m.type];
+    return `<div class="move"><span class="type-dot" style="background:${mt.color}"></span><b>${m.name}</b><span class="move-pow">${m.power ? 'Pow ' + m.power : 'Status'}</span><span class="move-desc">${m.desc}</span></div>`;
+  }).join('');
+  let evo = '';
+  if (sp.evolve) {
+    const to = SPECIES_BY_ID[sp.evolve.to];
+    evo = `Evolves into <b>${dex.seen.has(to.id) ? to.name : '???'}</b> ${sp.evolve.level ? `at level ${sp.evolve.level}` : 'when very happy'}.`;
+  } else if (sp.evolvesFrom) evo = `Evolves from <b>${SPECIES_BY_ID[sp.evolvesFrom].name}</b>.`;
+  const where = sp.habitat.length ? sp.habitat.map((z) => ZONES[z].name).join(', ') : 'Unknown… only the most beloved ranches';
+  const when = { day: '☀️ Daytime (naps at night)', night: '🌙 Night only', any: '🌗 Day and night' }[sp.time];
+  return `
+    <button class="btn small" data-a="back">← Back</button>
+    <div class="dex-detail">
+      <div class="dex-portrait" style="--tc:${t.color}"><img src="${portrait(sp.id)}" alt=""><img class="shiny" src="${portrait(sp.id, true)}" alt="" title="Shiny colours"></div>
+      <div class="dex-info">
+        <div class="dex-num">#${String(sp.num).padStart(2, '0')} ${dex.caught.has(sp.id) ? '💞 Befriended' : ''}</div>
+        <h2>${sp.name}</h2>
+        <div class="badges">
+          <span class="type-badge" style="background:${t.color}">${t.icon} ${t.name}</span>
+          <span class="rarity" style="color:${r.color}">${'★'.repeat(r.stars)} ${r.name}</span>
+          <span class="pers">${p.icon} Usually ${p.name}</span>
+        </div>
+        <p class="desc">${sp.desc}</p>
+        <div class="stats">${statBar('HP', sp.base.hp)}${statBar('ATK', sp.base.atk)}${statBar('DEF', sp.base.def)}${statBar('SPD', sp.base.spd)}</div>
+        <p class="small-line">📍 ${where} · ${when}</p>
+        ${evo ? `<p class="small-line">🧬 ${evo}</p>` : ''}
+        <p class="small-line">💪 Strong vs ${ch.strong.map((k) => TYPES[k].icon + ' ' + TYPES[k].name).join(', ')} · 😣 Weak to ${weakTo.map((x) => x.icon + ' ' + x.name).join(', ')}</p>
+      </div>
+    </div>
+    <h3>Moves</h3><div class="moves">${moves}</div>`;
+}
+
+function typeChartHTML() {
+  const ids = CREATURE_TYPES;
+  const head = ids.map((d) => `<th title="${TYPES[d].name}">${TYPES[d].icon}</th>`).join('');
+  const rows = ids.map((a) => `<tr><th>${TYPES[a].icon} ${TYPES[a].name}</th>${ids.map((d) => {
+    const e = effectiveness(a, d);
+    return `<td class="${e > 1 ? 'good' : e < 1 ? 'bad' : ''}">${e > 1 ? '2×' : e < 1 ? '½' : ''}</td>`;
+  }).join('')}</tr>`).join('');
+  return `<button class="btn small" data-a="back">← Back</button>
+    <h3>Type Chart</h3><p class="hint">Rows attack, columns defend. 2× = super effective, ½ = not very effective.</p>
+    <table class="type-chart"><tr><th>Attacker ↓ / Defender →</th>${head}</tr>${rows}</table>
+    <h3>Co-op Combos</h3><p class="hint">Use these two types in the same turn with your friend (Stage 6).</p>
+    <div class="combos">${COMBOS.map((c) => `<span>${TYPES[c.types[0]].icon}+${TYPES[c.types[1]].icon} <b>${c.name}</b></span>`).join('')}</div>`;
 }
 
 export class PauseMenu {

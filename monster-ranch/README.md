@@ -33,10 +33,10 @@ Debug: in the browser console, `game.unlockAll()` opens every zone.
 ## Build stages
 
 - [x] **1. First-person movement, the ranch hub, one wild zone**
-- [ ] 2. Creatures: 3D designs, roaming AI, personalities, Dex
+- [x] **2. Creatures: 30 original 3D designs, roaming AI, personalities, Dex**
 - [ ] 3. Battles + physical Bond Orb catching
 - [ ] 4. Ranch building mode, pens, care, happiness, production
-- [ ] 5. Online multiplayer (PeerJS)
+- [x] **5. Online multiplayer (PeerJS)**: host/join, shared world, avatars, chat (pulled forward; 2v2 battles and co-op catching arrive with stages 3 and 6)
 - [ ] 6. Breeding, eggs, training, evolution, combo moves
 - [ ] 7. Shop, notice board, more zones, guardians, saving
 - [ ] 8. Polish: menus, music, particles, juice

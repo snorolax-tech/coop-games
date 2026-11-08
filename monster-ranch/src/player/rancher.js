@@ -128,6 +128,7 @@ export class Rancher {
     this.head.rotation.x = -this.pitch * 0.6;
 
     const speed = Math.hypot(this.pos.x - prev.x, this.pos.z - prev.z) / Math.max(dt, 1e-4);
+    this.speed = speed;
     this.walk += dt * Math.min(speed, 11) * 1.4;
     const amp = Math.min(1, speed / 5) * 0.7;
     this.legs[0].rotation.x = Math.sin(this.walk) * amp;

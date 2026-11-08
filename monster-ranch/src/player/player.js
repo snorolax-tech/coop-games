@@ -20,6 +20,8 @@ export class Player {
     this.world = world;
     this.pos = new THREE.Vector3(0, 0, 16);
     this.vel = new THREE.Vector3();
+    this.knock = new THREE.Vector3(); // external push (e.g. a grumpy creature's charge)
+    this.shake = 0;
     this.yaw = 0; this.pitch = 0;
     this.onGround = false;
     this.inWater = false;
@@ -111,8 +113,9 @@ export class Player {
 
     // horizontal move + collisions
     const ox = this.pos.x, oz = this.pos.z;
-    this.pos.x += this.vel.x * dt;
-    this.pos.z += this.vel.z * dt;
+    this.pos.x += (this.vel.x + this.knock.x) * dt;
+    this.pos.z += (this.vel.z + this.knock.z) * dt;
+    this.knock.multiplyScalar(Math.exp(-5 * dt));
     this._resolve(this.pos.y);
 
     // locked zones and the world edge
@@ -157,8 +160,13 @@ export class Player {
     const targetFov = this.aiming ? 48 : sprint && hs > 7 ? 80 : 75;
     this.fov = lerp(this.fov, targetFov, Math.min(1, dt * 10));
     if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
-    this.camera.position.set(this.pos.x, this.pos.y + EYE + Math.sin(this.bob * 2) * 0.05 * Math.min(1, hs / 6), this.pos.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.shake = Math.max(0, this.shake - dt * 2);
+    const sh = this.shake * this.shake * 0.25;
+    this.camera.position.set(
+      this.pos.x + (Math.random() - 0.5) * sh,
+      this.pos.y + EYE + Math.sin(this.bob * 2) * 0.05 * Math.min(1, hs / 6) + (Math.random() - 0.5) * sh,
+      this.pos.z + (Math.random() - 0.5) * sh);
+    this.camera.rotation.set(this.pitch, this.yaw, (Math.random() - 0.5) * sh * 0.2, 'YXZ');
   }
 
   forward(out = new THREE.Vector3()) {

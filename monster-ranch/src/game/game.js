@@ -13,6 +13,9 @@ import { Player } from '../player/player.js';
 import { HeldItems } from '../player/items.js';
 import { Rancher } from '../player/rancher.js';
 import { Projectiles } from '../physics/projectiles.js';
+import { WildCreatures } from '../creatures/wild.js';
+import { SPECIES, SPECIES_BY_ID } from '../data/creatures.js';
+import { TYPES } from '../data/types.js';
 import { Interactions } from './interact.js';
 import { FX } from './fx.js';
 import { HUD } from '../ui/hud.js';
@@ -79,6 +82,8 @@ export class Game {
     this.world.build(this);
     for (const id of WILD_ZONES) this.world.setUnlocked(id, this.unlocked.has(id));
     this.projectiles = new Projectiles(this.world, this);
+    this.creatures = new WildCreatures(this);
+    this.dex = { seen: new Set(), caught: new Set() };
     this.player = new Player(this.camera, this.world);
     this.items = new HeldItems(this.camera, this);
     this.panel = new TabPanel(uiRoot, this);
@@ -144,6 +149,7 @@ export class Game {
         t: 'welcome', host: { name: this.profile.name, color: this.profile.color },
         time: this.world.sky.time, unlocked: [...this.unlocked], landmarks: [...this.landmarks],
         nodes: this.world.resources.flags(), inv, pr: this.projectiles.snapshot(),
+        cr: this.creatures.snapshot(), dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       });
       this.chat.add('', `🤠 ${name} joined the ranch!`, '', true);
       this.toast(`${name} joined the ranch!`, 'good');
@@ -174,6 +180,14 @@ export class Game {
       this.world.sky.time = m.tm;
       if (this.remote) this._applyPose(this.remote, m.h);
       this.projectiles.applySnapshot(m.pr);
+      if (m.cr) this.creatures.applySnapshot(m.cr);
+    });
+    net.on('emote', (m) => this.creatures.showEmote(m.id, m.s, m.d));
+    net.on('knock', (m) => this.knockback(m.d[0], m.d[1], m.s));
+    net.on('seen', (m) => this.markSeen(m.id, true));
+    net.on('dex', (m) => {
+      for (const id of m.seen || []) this.markSeen(id, true);
+      for (const id of m.caught || []) this.dex.caught.add(id);
     });
     net.on('give', (m) => {
       this.inventory = m.inv; this.hud.refreshCounts();
@@ -287,6 +301,10 @@ export class Game {
     this.world.resources.applyFlags(m.nodes);
     this.projectiles.clear();
     this.projectiles.applySnapshot(m.pr || []);
+    this.creatures.clear();
+    this.creatures.authority = false;
+    this.creatures.applySnapshot(m.cr || []);
+    this.dex = { seen: new Set(m.dex?.seen || []), caught: new Set(m.dex?.caught || []) };
     this.player.teleport(3, 18, 0);
     this.player.zone = 'ranch';
     this._spawnRemote(m.host);
@@ -294,6 +312,39 @@ export class Game {
     this.hud.setRoom(this.net.code);
     this.hud.setPlayers(2);
     this.chat.add('', `🤠 You joined ${m.host.name}'s ranch.`, '', true);
+  }
+
+  actorById(id) {
+    if (id === 'guest') return this.guestActor;
+    return this.local;
+  }
+
+  knockback(dx, dz, strength) {
+    this.player.knock.set(dx * strength, 0, dz * strength);
+    this.player.vel.y = Math.max(this.player.vel.y, 4.5);
+    this.player.onGround = false;
+    this.player.shake = 1;
+    this.audio.play('land');
+    this.toast('Oof! You got bowled over!', 'bad');
+  }
+
+  onProjectileRest(p) {
+    if (p.kind === 'treat' && this.isAuthority) this.creatures.onTreatRest(p);
+  }
+
+  /** Record a species in the shared Creature Dex. fromNet = don't echo back. */
+  markSeen(id, fromNet = false) {
+    if (!SPECIES_BY_ID[id]) return;
+    if (this.dex.seen.has(id)) return;
+    this.dex.seen.add(id);
+    const sp = SPECIES_BY_ID[id];
+    this.hud.toast(`📖 New in the Dex: #${String(sp.num).padStart(2, '0')} ${sp.name} (${TYPES[sp.type].name})`, 'good');
+    this.audio.play('open');
+    if (this.panel.open) this.panel.render();
+    if (this.net.connected) {
+      if (this.isGuest && !fromNet) this.net.send({ t: 'seen', id });
+      if (this.net.role === 'host') this.net.send({ t: 'dex', seen: [id] });
+    }
   }
 
   sendChat(text) {
@@ -374,6 +425,8 @@ export class Game {
     if (fresh) Save.clearSave();
     this._applySave(data);
     this.world.resources.authoritative = true;
+    this.creatures.clear();
+    this.creatures.authority = true;
     this._enterPlay(`Welcome, ${this.profile.name}!`);
     if (fresh) this.save();
   }
@@ -395,6 +448,7 @@ export class Game {
     this.unlocked = new Set(d?.unlocked || ['meadow']);
     this.landmarks = new Set(d?.landmarks || []);
     this.guestSaves = d?.guests || {};
+    this.dex = { seen: new Set(d?.dex?.seen || []), caught: new Set(d?.dex?.caught || []) };
     this.world.sky.time = d?.time ?? 0.3;
     for (const id of WILD_ZONES) this.world.setUnlocked(id, this.unlocked.has(id));
     this.world.resources.restore(d?.nodes || this.world.resources.nodes.map(() => 0));
@@ -413,6 +467,7 @@ export class Game {
       guests,
       unlocked: [...this.unlocked],
       landmarks: [...this.landmarks],
+      dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       time: this.world.sky.time,
       nodes: this.world.resources.serialize(),
       player: { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw },
@@ -446,6 +501,8 @@ export class Game {
     this._removeRemote();
     this.guestActor = null;
     this.projectiles.clear();
+    this.creatures.clear();
+    this.creatures.authority = true;
     this.world.resources.authoritative = true;
     this.state = 'menu';
     this.pause.show(false);
@@ -572,20 +629,29 @@ export class Game {
     if (this.isGuest) this.projectiles.updateProxies(dt);
     else this.projectiles.update(dt);
     this.remote?.update(dt);
+    this.creatures.update(dt);
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);
 
     // look-at + interact
     const target = active ? this.interactions.update() : null;
     const inRange = this.interactions.inUseRange(target);
-    this.hud.setLook(target, target ? (inRange || !target.useRange ? this.interactions.subtitle(target) : 'Get closer to interact') : '');
+    this.hud.setLook(target, target ? this.interactions.subtitle(target) : '');
     if (active && target && inRange && input.wasPressed('KeyE')) this.requestUse(target);
+
+    // Dex: anything you look at, or that comes close, counts as seen
+    if (target?.speciesId) this.markSeen(target.speciesId);
+    this._seenT = (this._seenT || 0) + dt;
+    if (this._seenT > 0.5) {
+      this._seenT = 0;
+      for (const c of this.creatures.list.values()) if (c.root.visible && c.pos.distanceTo(this.player.pos) < 12) this.markSeen(c.sp.id);
+    }
 
     this.hud.setClock(this.world.sky.clockText(), this.world.sky.isNight);
 
     // network send
     if (this.net.tick(dt)) {
-      if (this.net.role === 'host') this.net.send({ t: 's', tm: r2(this.world.sky.time * 1000) / 1000, h: this._pose(), pr: this.projectiles.snapshot() });
+      if (this.net.role === 'host') this.net.send({ t: 's', tm: r2(this.world.sky.time * 1000) / 1000, h: this._pose(), pr: this.projectiles.snapshot(), cr: this.creatures.snapshot() });
       else this.net.send({ t: 'p', p: this._pose() });
     }
 

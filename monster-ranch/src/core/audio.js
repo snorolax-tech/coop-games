@@ -48,8 +48,20 @@ export class Audio {
     s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
   }
 
+  /** Creature voice: pitch depends on size, contour on mood. */
+  cry(pitch, mood, k = 1) {
+    const v = 0.16 * k;
+    switch (mood) {
+      case 'happy': this._tone(pitch, 0.12, { type: 'triangle', vol: v, slide: 1.3 }); this._tone(pitch * 1.3, 0.16, { type: 'triangle', vol: v, slide: 1.2, delay: 0.1 }); break;
+      case 'alarm': this._tone(pitch * 1.4, 0.1, { type: 'square', vol: v * 0.6, slide: 1.5 }); this._tone(pitch * 1.6, 0.1, { type: 'square', vol: v * 0.6, slide: 1.4, delay: 0.09 }); break;
+      case 'angry': this._tone(pitch * 0.5, 0.3, { type: 'sawtooth', vol: v * 0.7, slide: 0.7 }); this._noiseBurst(0.25, { vol: 0.08 * k, freq: pitch * 0.6, q: 2 }); break;
+      default: this._tone(pitch, 0.18, { type: 'sine', vol: v, slide: 1.4 }); this._tone(pitch * 1.1, 0.15, { type: 'sine', vol: v * 0.7, slide: 0.8, delay: 0.14 }); break;
+    }
+  }
+
   play(name, k = 1) {
     if (!this.ctx || this.muted) return;
+    if (name.startsWith('cry_')) { const [, p, mood] = name.split('_'); this.cry(+p, mood, k); return; }
     switch (name) {
       case 'pick': this._tone(660, 0.09, { type: 'triangle', vol: 0.25 }); this._tone(990, 0.12, { type: 'triangle', vol: 0.22, delay: 0.07 }); break;
       case 'coin': this._tone(988, 0.08, { type: 'square', vol: 0.12 }); this._tone(1319, 0.2, { type: 'square', vol: 0.12, delay: 0.08 }); break;

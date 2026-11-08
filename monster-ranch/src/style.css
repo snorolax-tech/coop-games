@@ -114,3 +114,41 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .chat-line.system { color: #ffd166; font-style: italic; }
 .chat-line.old { opacity: 0; }
 .chat-input { pointer-events: auto; margin-top: 6px; width: 100%; font: inherit; font-size: 15px; padding: 8px 12px; border-radius: 10px; border: 3px solid #ffd166; background: rgba(43,45,66,.92); color: #fff; outline: none; }
+
+/* ---------- creature dex ---------- */
+.dex-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.dex-card { font: inherit; color: #2b2d42; background: #fff; border: 3px solid #2b2d42; border-radius: 14px; padding: 6px 6px 8px; cursor: pointer; text-align: center; transition: transform .1s; }
+.dex-card:hover { transform: translateY(-2px); }
+.dex-card img { width: 88px; height: 88px; display: block; margin: 0 auto; }
+.dex-card.unseen { background: #eee6d6; cursor: default; }
+.dex-card.unseen img { filter: brightness(0); opacity: .28; }
+.dex-num { font-size: 12px; font-weight: 800; opacity: .6; text-align: left; }
+.dex-name { font-weight: 800; font-size: 14px; }
+.type-badge { display: inline-block; color: #fff; font-weight: 800; font-size: 12px; padding: 2px 8px; border-radius: 999px; text-shadow: 0 1px 1px rgba(0,0,0,.35); margin-top: 3px; }
+.type-badge.unknown { background: #b8b0a0; }
+.dex-detail { display: flex; gap: 18px; margin-top: 10px; flex-wrap: wrap; }
+.dex-portrait { position: relative; width: 200px; height: 200px; border-radius: 20px; border: 3px solid #2b2d42; background: radial-gradient(circle at 50% 40%, #fff, var(--tc)); flex: none; }
+.dex-portrait img { width: 100%; height: 100%; }
+.dex-portrait img.shiny { position: absolute; right: -10px; bottom: -10px; width: 70px; height: 70px; background: #fff7cc; border: 3px solid #2b2d42; border-radius: 50%; }
+.dex-info { flex: 1; min-width: 260px; }
+.dex-info h2 { margin: 2px 0 6px; font-size: 30px; }
+.badges { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-weight: 800; font-size: 13px; }
+.desc { font-size: 15px; margin: 10px 0; }
+.small-line { font-size: 13px; margin: 4px 0; }
+.stats { display: grid; gap: 4px; margin: 8px 0; }
+.stat { display: grid; grid-template-columns: 36px 1fr 34px; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
+.stat .bar { height: 10px; background: #e8dcc4; border-radius: 6px; overflow: hidden; border: 2px solid #2b2d42; }
+.stat .bar i { display: block; height: 100%; background: linear-gradient(90deg, #06d6a0, #ffd166); }
+.moves { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.move { background: #fff; border: 2px solid #2b2d42; border-radius: 12px; padding: 6px 10px; font-size: 13px; display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 8px; align-items: center; }
+.move-desc { grid-column: 1 / -1; opacity: .7; font-size: 12px; }
+.move-pow { font-size: 11px; font-weight: 800; opacity: .6; }
+.type-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #2b2d42; }
+.type-chart { border-collapse: collapse; margin: 8px 0 14px; font-size: 14px; }
+.type-chart th, .type-chart td { border: 2px solid #2b2d42; padding: 6px 10px; text-align: center; background: #fff; }
+.type-chart th { background: #ffe8b8; }
+.type-chart td.good { background: #b7f5d8; font-weight: 900; }
+.type-chart td.bad { background: #ffd0d0; font-weight: 900; }
+.combos { display: flex; flex-wrap: wrap; gap: 8px; }
+.combos span { background: #fff; border: 2px solid #2b2d42; border-radius: 999px; padding: 4px 10px; font-size: 13px; }
