@@ -101,7 +101,7 @@ export class World {
       this._place(h.group, x, z, rot);
       this.colliders.box(x, z, h.hw, h.hd, rot, h.top);
       this.reserve(x, z, 9);
-      I.add({ id: 'house', root: h.group, name: 'Farmhouse', sub: 'E  Rest until morning', use: (a) => game.sleep(a) });
+      I.add({ id: 'house', root: h.group, name: 'Farmhouse', sub: () => `E  Rest — heal your creatures${game.world.sky.isNight ? ' and sleep until morning' : ''}`, use: (a) => game.sleep(a) });
     }
     // barn
     {

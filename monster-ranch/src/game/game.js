@@ -38,6 +38,7 @@ import { HOTBAR } from '../data/items.js';
 import { ShopPanel, BoardPanel } from '../ui/shop.js';
 import { SUPPLIES, UPGRADES, ZONE_PASSES, makeRequest } from '../data/shop.js';
 import { GUARDIANS } from '../data/creatures.js';
+import { Minimap } from '../ui/minimap.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -132,6 +133,7 @@ export class Game {
     this.barn = new BarnPanel(uiRoot, this);
     this.shop = new ShopPanel(uiRoot, this);
     this.board = new BoardPanel(uiRoot, this);
+    this.minimap = new Minimap(uiRoot, this);
 
     this._wirePlayer();
     this._wireNet();
@@ -1011,6 +1013,7 @@ export class Game {
     this.state = 'playing';
     this.hud.show(true);
     this.chat.show(true);
+    this.minimap.show(true);
     this.hud.setHotbar(this.items.index);
     this.hud.setZone(this.player.zone);
     this.hud.banner(ZONES.ranch.name, sub, ZONES.ranch.color);
@@ -1112,6 +1115,7 @@ export class Game {
     this.starter.hide();
     this.catching.pending = [];
     this.buildMode.toggle(false);
+    this.minimap.show(false);
     this.barn.toggle(false);
     this.shop.toggle(false);
     this.board.toggle(false);
@@ -1182,12 +1186,32 @@ export class Game {
     else this.net.send({ t: 'inv', inv });
   }
 
+  /** Farmhouse: rest any time to heal your party. At night it also sleeps until morning. */
   sleep(actor = this.local) {
+    if (this.battles.battleOf(actor.id)) { actor.toast('Finish your battle first!', 'muted'); return; }
+    const party = actor.party || [];
+    const hurt = party.filter((c) => c.hp < c.stats.hp).length;
+    for (const c of party) { c.hp = c.stats.hp; c.happiness = Math.min(100, (c.happiness ?? 70) + 2); }
+    this.partyChanged(actor);
+    const names = party.map((c) => this.creatureName(c)).join(', ');
+    const title = '💖 Your creatures are fully healed!';
+    const sub = party.length ? `${names} ${party.length === 1 ? 'is' : 'are'} rested and ready${hurt ? '' : ' (they were already healthy)'}` : 'Rest up — choose a partner to start adventuring';
+    // tell just the rancher who rested
+    if (actor === this.local) {
+      this.hud.banner(title, sub, '#ff8fb8');
+      this.audio.play('chime');
+      this.fx.sparkle(this.player.pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xff8fb8, 24);
+    } else {
+      this.net.send({ t: 'banner', title, sub, color: '#ff8fb8', snd: 'chime' });
+    }
+    actor.toast(`💖 Healed ${party.length} creature${party.length === 1 ? '' : 's'} at the Farmhouse`, 'good');
     const t = this.world.sky.time;
-    if (t > 0.22 && t < 0.75) { actor.toast("You're not sleepy yet. Come back in the evening.", 'muted'); return; }
-    this.world.sky.time = 0.27;
-    this.healAll();
-    this.sharedBanner('Good morning!', `${actor.name} rested — everyone's creatures are fully healed`, '#ffd166', 'chime');
+    if (t > 0.75 || t < 0.22) {
+      setTimeout(() => {
+        this.world.sky.time = 0.27;
+        this.sharedBanner('☀️ Good morning!', `${actor.name} slept until sunrise`, '#ffd166', null);
+      }, 2800);
+    }
     this.save();
   }
 
@@ -1279,8 +1303,10 @@ export class Game {
       this._flushRanch();
       if (this._saveSoon > 0) { this._saveSoon -= dt; if (this._saveSoon <= 0) this.save(); }
     }
-    // build mode (B) on the ranch
+    // build mode (B) on the ranch, world map (M)
     if (active && input.wasPressed('KeyB')) this.buildMode.toggle();
+    if (this.state === 'playing' && !this.chat.open && input.pressedAny('KeyM')) { this.minimap.toggleFull(); this.audio.play('ui'); }
+    this.minimap.update(dt);
     this.buildMode.update(dt, input);
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);

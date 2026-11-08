@@ -1,4 +1,4 @@
-# 🐾 Monster Ranch
+﻿# 🐾 Monster Ranch
 
 A 2-player online co-op first-person creature-sanctuary game. Explore the wilds, befriend
 original monsters, raise them on your shared ranch. Built with **Vite + Three.js** (+ PeerJS
@@ -30,6 +30,7 @@ Open http://localhost:5174. Click **New Ranch**, then click the game to capture 
 | B (on the ranch) | Build mode: 1–0/wheel choose, R rotate, click place, X demolish |
 | Tap E / hold E on a ranch creature | Feed (treat if held, else berries) / pet |
 | In battle | On your turn the mouse is freed: **click a move** (or press 1–4) or **Run** (R). Click the game to aim and throw a Bond Orb |
+| M | World map (zones, landmarks, guardians, you and your friend) - a minimap is always shown top-right |
 | Tab | Inventory / Party / Dex |
 | Esc | Pause (save, export/import, volume, sensitivity) |
 

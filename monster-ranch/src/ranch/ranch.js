@@ -496,7 +496,7 @@ export class RanchSim {
     this._trainT = 0;
     for (const inst of this.trainees().slice(0, MAX_TRAINEES)) {
       if ((inst.happiness ?? 70) < 30) continue;
-      const lv = grantXp(inst, 6 + inst.level);
+      const lv = grantXp(inst, 4 + Math.ceil(inst.level / 2));
       inst.hunger = clamp((inst.hunger ?? 80) - 6, 0, 100);
       const c = this.creatures.get(this.byUid.get(inst.uid));
       c?.say('💪', 1);

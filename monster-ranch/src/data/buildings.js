@@ -18,7 +18,7 @@ export const BUILD_ORDER = ['pen', 'trough', 'pond', 'flowers', 'lamp', 'bench',
 
 export const BREED_TIME = 150;   // seconds for a compatible pair to lay an egg
 export const HATCH_TIME = 120;   // seconds in the incubator
-export const TRAIN_TICK = 20;    // seconds between training XP gains
+export const TRAIN_TICK = 30;    // seconds between training XP gains
 export const MAX_TRAINEES = 4;
 
 // What happy ranch creatures produce, by type.

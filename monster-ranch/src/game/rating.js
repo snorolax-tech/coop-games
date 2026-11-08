@@ -3,7 +3,8 @@
 // rating in world/zones.js). Stage 4+ will add ranch buildings and happiness as sources.
 
 // Points needed to reach rating 1, 2, 3, ...
-export const THRESHOLDS = [10, 22, 36, 52, 70, 90, 115, 145, 180, 220];
+// (tuned slower: the first zone opens after a good look around the Meadow and a few friends)
+export const THRESHOLDS = [15, 35, 60, 90, 125, 165, 210, 260, 320, 400];
 export const MAX_RATING = THRESHOLDS.length;
 
 export const SOURCES = {
