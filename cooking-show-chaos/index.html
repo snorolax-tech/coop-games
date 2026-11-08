@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cooking Show Chaos</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍳</text></svg>" />
+  </head>
+  <body>
+    <div id="game-container"></div>
+
+    <div id="hud" class="hidden">
+      <div id="top-bar">
+        <div id="rec-badge">⏸ NOT RECORDING</div>
+        <div id="tape">📼 0:00 / 1:30<div class="tape-bar"><div></div></div></div>
+        <div id="timer">5:00</div>
+      </div>
+      <div id="money">$0</div>
+      <div id="voice" class="hidden"></div>
+      <div id="left-panel">
+        <div id="orders"></div>
+        <div id="recipes"></div>
+      </div>
+      <div id="recipe-book" class="hidden"></div>
+      <div id="pip-frame" class="hidden">
+        <div class="pip-live">⏸ STANDBY</div>
+        <div class="pip-rec"></div>
+        <div class="pip-corner tl"></div><div class="pip-corner tr"></div>
+        <div class="pip-corner bl"></div><div class="pip-corner br"></div>
+        <div id="pip-viewers"></div>
+      </div>
+      <div id="cam-status"></div>
+      <div id="crosshair"></div>
+      <div id="prompt"></div>
+      <div id="bars"></div>
+      <div id="moments"></div>
+      <div id="banner"><div class="title"></div><div class="sub"></div></div>
+      <div id="toasts"></div>
+      <div id="foam-overlay"></div>
+      <div id="hurt-overlay"></div>
+      <div id="fire-overlay" class="hidden"></div>
+      <div id="ghost-msg" class="hidden"></div>
+      <div id="health">
+        <div class="hp-row"><span class="hp-heart">❤</span><div class="hp-bar"><div></div></div><span class="hp-num">100</span></div>
+        <div class="hp-partner"></div>
+      </div>
+      <div id="controls-hint">WASD move · Shift sprint · Space jump · LMB pick/drop · RMB throw · E use · Q camera · R record · Scroll zoom · V mute mic · TAB recipes · Esc pause</div>
+    </div>
+
+    <div id="screen"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

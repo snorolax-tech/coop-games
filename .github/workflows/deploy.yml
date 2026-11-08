@@ -1,0 +1,51 @@
+# Builds both games and publishes them to GitHub Pages on every push to main.
+#   Cooking Show Chaos -> https://<user>.github.io/<repo>/
+#   Monster Ranch      -> https://<user>.github.io/<repo>/monster-ranch/
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build Cooking Show Chaos
+        working-directory: cooking-show-chaos
+        run: npm ci && npm run build
+      - name: Build Monster Ranch
+        working-directory: monster-ranch
+        run: npm ci && npm run build
+      - name: Combine sites
+        run: |
+          mkdir -p site
+          cp -r cooking-show-chaos/dist/. site/
+          mkdir -p site/monster-ranch
+          cp -r monster-ranch/dist/. site/monster-ranch/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
