@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { SPECIES_BY_ID } from '../data/creatures.js';
 import { MOVES } from '../data/moves.js';
 import { TYPES, findCombo, effectiveness } from '../data/types.js';
-import { useMove, pickWildMove, stat, xpReward, grantXp } from './rules.js';
+import { useMove, pickWildMove, stat, xpReward, grantXp, xpToNext } from './rules.js';
 import { PvpBattle } from './pvp.js';
 
 const ACT_DELAY = 1.25;
@@ -256,7 +256,7 @@ class Battle {
     const ally = (a) => ({
       key: a.key, owner: a.owner, ownerName: a.actor.name, sp: a.inst.species, lvl: a.inst.level, shiny: a.inst.shiny,
       name: nameOf(a.inst), hp: a.inst.hp, max: a.inst.stats.hp, status: a.status, moves: a.inst.moves, chose: !!a.choice,
-      ct: a.choice ? MOVES[a.choice].type : null,
+      ct: a.choice ? MOVES[a.choice].type : null, xp: a.inst.xp, xpn: xpToNext(a.inst.level),
       x: +a.pos.x.toFixed(2), y: +a.pos.y.toFixed(2), z: +a.pos.z.toFixed(2), yaw: +a.yaw.toFixed(2),
     });
     const foe = (f) => ({ key: f.key, nid: f.nid, sp: f.inst.species, lvl: f.inst.level, name: nameOf(f.inst), hp: f.inst.hp, max: f.inst.stats.hp, status: f.status });

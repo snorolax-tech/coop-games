@@ -28,7 +28,7 @@ import { BattleHUD } from '../ui/battle.js';
 import { StarterPicker } from '../ui/starter.js';
 import { Catching } from '../catching/catching.js';
 import { createCreature, calcStats } from '../creatures/instance.js';
-import { grantXp } from '../battle/rules.js';
+import { grantXp, xpToNext } from '../battle/rules.js';
 import { STARTERS } from '../ui/starter.js';
 import { ratingPoints, ratingInfo } from './rating.js';
 import { Buildings } from '../ranch/buildings.js';
@@ -301,6 +301,7 @@ export class Game {
     net.on('fx', (m) => this._playFx(m.k, v3(m.p), m.c));
     net.on('snd', (m) => this._playSound(m.n, v3(m.p), m.k));
     net.on('landmark', (m) => this.landmarks.add(m.id));
+    net.on('xpgain', (m) => this.hud.showXp(m.gains, m.title));
     net.on('rating', (m) => { this.rating = m.r; this.hud.setRating(this.rating); if (this.panel.open) this.panel.render(); });
     net.on('party', (m) => { this.party = m.party; this.ranchCount = m.ranch; this.eggs = m.eggs || []; this._partyUpdated(); });
     net.on('bstate', (m) => this.battleView.apply(m.list));
@@ -931,19 +932,30 @@ export class Game {
   awardPartyXp(actor, amount, fighter = null, reason = '') {
     if (!actor?.party?.length || amount <= 0) return [];
     const ups = [];
+    const gains = [];
     const lead = fighter || actor.party[0];
     for (const c of actor.party) {
       const xp = Math.max(1, Math.round(c === lead ? amount : amount * 0.75));
+      const from = { lvl: c.level, pct: c.xp / xpToNext(c.level) };
       const lv = grantXp(c, xp);
-      if (lv) {
-        ups.push(c);
-        actor.toast(`⬆ ${this.creatureName(c)} grew to Lv ${c.level}!`, 'good');
-        this.queueEvolution(c, actor);
-      }
+      gains.push(this._xpEntry(c, xp, from, lv));
+      if (lv) { ups.push(c); this.queueEvolution(c, actor); }
     }
-    if (reason) actor.toast(`${reason} Team +${Math.round(amount * 0.75)}–${amount} XP`, 'good');
+    this.showXpGains(actor, gains, reason);
     this.partyChanged(actor);
     return ups;
+  }
+
+  _xpEntry(c, gain, from, ups) {
+    return { sp: c.species, shiny: !!c.shiny, name: this.creatureName(c), gain, ups, fromLvl: from.lvl, fromPct: from.pct,
+      lvl: c.level, xp: c.xp, next: xpToNext(c.level) };
+  }
+
+  /** Show (or send) the "XP gained" popup to the rancher who earned it. */
+  showXpGains(actor, gains, title) {
+    if (!gains.length) return;
+    if (actor === this.local) this.hud.showXp(gains, title);
+    else this.net.send({ t: 'xpgain', gains, title });
   }
 
   /** Host: your walking partner slowly gains XP while it's out with you. */
@@ -954,8 +966,11 @@ export class Game {
     const give = (actor, out) => {
       const c = actor?.party?.[0];
       if (!c || !out || this.battles.battleOf(actor.id)) return;
-      const lv = grantXp(c, 3 + Math.ceil(c.level / 3));
-      if (lv) { actor.toast(`⬆ ${this.creatureName(c)} grew to Lv ${c.level} walking with you!`, 'good'); this.queueEvolution(c, actor); }
+      const gain = 3 + Math.ceil(c.level / 3);
+      const from = { lvl: c.level, pct: c.xp / xpToNext(c.level) };
+      const lv = grantXp(c, gain);
+      if (lv) this.queueEvolution(c, actor);
+      this.showXpGains(actor, [this._xpEntry(c, gain, from, lv)], '🐾 Walking together');
       this.partyChanged(actor);
     };
     give(this.local, this.companion.visible);

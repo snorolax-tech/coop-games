@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { SPECIES_BY_ID } from '../data/creatures.js';
 import { MOVES } from '../data/moves.js';
-import { useMove, stat, grantXp } from './rules.js';
+import { useMove, stat, grantXp, xpToNext } from './rules.js';
 
 const ACT_DELAY = 1.25;
 const nameOf = (inst) => inst.nickname || SPECIES_BY_ID[inst.species].name;
@@ -154,10 +154,8 @@ export class PvpBattle {
     // friendly match: put everyone's HP back and clear statuses
     for (const [c, hp] of this.saved) c.hp = hp;
     for (const a of this.actors) {
-      // a little XP for taking part
-      const lead = a.party[0];
-      if (lead) { const lv = grantXp(lead, a === winner ? 25 : 12); if (lv) this.game.queueEvolution(lead, a); }
-      this.game.partyChanged(a);
+      // a little XP for taking part (more for the winner)
+      this.game.awardPartyXp(a, a === winner ? 30 : 15, a.party[0], a === winner ? '🏆 Friendly battle won!' : '⚔️ Good battle!');
     }
     const text = forfeit ? `${loser.name} forfeits — ${winner.name} wins! 🏆` : `${winner.name} wins the friendly battle! 🏆`;
     this.mgr.emit({ b: this.id, end: 'pvp', text, winner: winner.id });
@@ -170,6 +168,7 @@ export class PvpBattle {
     const d = (a) => ({
       key: a.key, owner: a.owner, ownerName: a.actor.name, sp: a.inst.species, lvl: a.inst.level, shiny: a.inst.shiny,
       name: nameOf(a.inst), hp: a.inst.hp, max: a.inst.stats.hp, status: a.status, moves: a.inst.moves, chose: !!a.choice, ct: null,
+      xp: a.inst.xp, xpn: xpToNext(a.inst.level),
       x: +a.pos.x.toFixed(2), y: +a.pos.y.toFixed(2), z: +a.pos.z.toFixed(2), yaw: +a.yaw.toFixed(2),
     });
     return { id: this.id, pvp: true, phase: this.phase, turn: this.turn, allies: this.allies.map(d), foes: [], log: this.log.slice(-3) };

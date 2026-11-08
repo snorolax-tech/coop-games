@@ -1,6 +1,8 @@
 ﻿// In-game HUD: crosshair, look-at label, hotbar, clock/zone, coins, toasts, zone banner.
 import { HOTBAR, ITEMS } from '../data/items.js';
 import { ZONES, zoneTitle } from '../world/zones.js';
+import { portrait } from '../creatures/portraits.js';
+import { xpToNext } from '../battle/rules.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 
@@ -12,6 +14,7 @@ export class HUD {
         <div class="crosshair"><span></span></div>
         <div class="hold-ring"><i></i></div>
         <div class="click-hint hidden">🖱️ Click (or press any key) to keep playing</div>
+        <div class="xp-gain hidden"><div class="xp-title"></div><div class="xp-rows"></div></div>
         <div class="look"><div class="look-name"></div><div class="look-sub"></div></div>
         <div class="topleft">
           <div class="zone-pill"><span class="zone-dot"></span><span class="zone-name"></span></div>
@@ -56,7 +59,11 @@ export class HUD {
         const lead = party[0];
         c.textContent = party.length ? `${party.filter((p) => p.hp > 0).length}/${party.length}` : '';
         this.slots[i].classList.toggle('empty', !party.some((p) => p.hp > 0));
-        this.slots[i].querySelector('.slot-name').textContent = lead ? `${this.game.creatureName(lead)} Lv ${lead.level}  (Q: next)` : 'Partner';
+        this.slots[i].querySelector('.slot-name').textContent = lead ? `${this.game.creatureName(lead)} Lv ${lead.level} · XP ${lead.xp}/${xpToNext(lead.level)}  (Q: next)` : 'Partner';
+        let xb = this.slots[i].querySelector('.slot-xp');
+        if (!xb) { xb = document.createElement('div'); xb.className = 'slot-xp'; xb.innerHTML = '<i></i>'; this.slots[i].appendChild(xb); }
+        xb.style.display = lead ? '' : 'none';
+        if (lead) xb.querySelector('i').style.width = `${Math.min(100, (lead.xp / xpToNext(lead.level)) * 100)}%`;
       } else c.textContent = '';
     });
     const eggs = this.game.eggs?.length || 0;
@@ -78,6 +85,48 @@ export class HUD {
   }
 
   setClickHint(v) { this.$('.click-hint').classList.toggle('hidden', !v); }
+
+  /**
+   * "XP gained" popup: one row per creature with an animated XP bar.
+   * gains: [{ sp, shiny, name, gain, ups, fromPct, lvl, xp, next }]
+   */
+  showXp(gains, title) {
+    const box = this.$('.xp-gain');
+    this.$('.xp-title').textContent = title || '✨ Experience gained';
+    const rows = this.$('.xp-rows');
+    rows.innerHTML = gains.map((g, i) => `
+      <div class="xp-row">
+        <img src="${portrait(g.sp, g.shiny)}" alt="">
+        <div class="xp-info">
+          <div class="xp-name"><b>${g.name}</b> <span class="xp-lv">Lv ${g.ups ? g.lvl - g.ups : g.lvl}</span>
+            <span class="xp-plus">+${g.gain} XP</span>${g.ups ? `<span class="xp-up hidden" data-up="${i}">⬆ LEVEL UP! Lv ${g.lvl}</span>` : ''}</div>
+          <div class="xp-bar"><i data-bar="${i}" style="width:${Math.min(100, g.fromPct * 100)}%"></i></div>
+          <div class="xp-text">${g.xp} / ${g.next} XP to Lv ${g.lvl + 1}</div>
+        </div>
+      </div>`).join('');
+    box.classList.remove('hidden', 'out');
+    void box.offsetWidth;
+    // animate each bar: fill up (wrapping around on level-ups), then settle on the new amount
+    gains.forEach((g, i) => {
+      const bar = rows.querySelector(`[data-bar="${i}"]`);
+      const final = `${Math.min(100, (g.xp / g.next) * 100)}%`;
+      if (g.ups) {
+        setTimeout(() => { bar.style.width = '100%'; }, 80);
+        setTimeout(() => {
+          bar.style.transition = 'none'; bar.style.width = '0%';
+          rows.querySelector(`[data-up="${i}"]`)?.classList.remove('hidden');
+          const lv = bar.closest('.xp-row').querySelector('.xp-lv'); if (lv) lv.textContent = `Lv ${g.lvl}`;
+          void bar.offsetWidth;
+          bar.style.transition = ''; bar.style.width = final;
+        }, 750);
+      } else {
+        setTimeout(() => { bar.style.width = final; }, 80);
+      }
+    });
+    clearTimeout(this._xpHide);
+    const long = gains.some((g) => g.ups) ? 5200 : gains.length > 1 ? 4200 : 2600;
+    this._xpHide = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.classList.add('hidden'), 400); }, long);
+  }
 
   /** Progress ring for hold-E petting (0..1). */
   setHold(p) {

@@ -298,3 +298,22 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .sign-edit { position: fixed; left: 50%; top: 35%; transform: translateX(-50%); background: #fff7e6; color: #2b2d42; border: 4px solid #2b2d42; border-radius: 18px; padding: 14px 18px; box-shadow: 0 8px 0 #2b2d42; pointer-events: auto; text-align: center; }
 .sign-title { font-weight: 900; font-size: 18px; margin-bottom: 8px; }
 .sign-edit input { font: inherit; font-size: 20px; font-weight: 800; padding: 8px 12px; border-radius: 12px; border: 3px solid #2b2d42; width: 320px; text-align: center; }
+
+/* ---------- XP bars & popup ---------- */
+.bxpbar { height: 4px; background: rgba(0,0,0,.4); border-radius: 3px; overflow: hidden; margin-top: 2px; }
+.bxpbar i { display: block; height: 100%; background: #4cc9f0; transition: width .5s; }
+.slot-xp { position: absolute; left: 6px; right: 6px; bottom: 3px; height: 4px; background: rgba(0,0,0,.45); border-radius: 3px; overflow: hidden; }
+.slot-xp i { display: block; height: 100%; background: #4cc9f0; }
+.xp-gain { position: absolute; left: 16px; top: 34%; width: 300px; background: rgba(43,45,66,.92); border: 3px solid #4cc9f0; border-radius: 16px; padding: 10px 12px; animation: toastIn .25s ease-out; transition: opacity .4s, transform .4s; }
+.xp-gain.out { opacity: 0; transform: translateX(-20px); }
+.xp-title { font-weight: 900; font-size: 15px; margin-bottom: 6px; color: #9be7ff; }
+.xp-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.xp-row img { width: 40px; height: 40px; flex: none; background: rgba(255,255,255,.12); border-radius: 10px; }
+.xp-info { flex: 1; min-width: 0; }
+.xp-name { font-size: 13px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.xp-lv { opacity: .75; font-size: 12px; }
+.xp-plus { color: #7dffb0; font-weight: 900; font-size: 12px; }
+.xp-up { color: #ffd166; font-weight: 900; font-size: 12px; animation: comboPulse .8s infinite; }
+.xp-bar { height: 8px; background: rgba(0,0,0,.45); border-radius: 5px; overflow: hidden; margin-top: 3px; }
+.xp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #4cc9f0, #7dffb0); transition: width .6s ease-out; }
+.xp-text { font-size: 11px; opacity: .7; margin-top: 2px; }

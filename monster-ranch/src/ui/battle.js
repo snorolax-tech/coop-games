@@ -18,7 +18,8 @@ function card(b, mine) {
     <div class="bname"><span class="type-dot" style="background:${t.color}"></span>${b.name} <small>Lv ${b.lvl}</small>
       ${b.status ? `<span class="bstatus">${STATUS[b.status]}</span>` : ''}${b.ownerName ? `<span class="bowner">${b.ownerName}</span>` : ''}</div>
     <div class="hpbar"><i style="width:${pct * 100}%;background:${col}"></i></div>
-    <div class="hptext">${b.hp}/${b.max} HP</div>
+    ${b.xpn ? `<div class="bxpbar"><i style="width:${Math.min(100, (b.xp / b.xpn) * 100)}%"></i></div>` : ''}
+    <div class="hptext">${b.hp}/${b.max} HP${b.xpn ? ` · XP ${b.xp}/${b.xpn}` : ''}</div>
   </div>`;
 }
 
