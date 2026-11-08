@@ -317,3 +317,19 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .xp-bar { height: 8px; background: rgba(0,0,0,.45); border-radius: 5px; overflow: hidden; margin-top: 3px; }
 .xp-bar i { display: block; height: 100%; background: linear-gradient(90deg, #4cc9f0, #7dffb0); transition: width .6s ease-out; }
 .xp-text { font-size: 11px; opacity: .7; margin-top: 2px; }
+
+/* ---------- polish ---------- */
+.screen-flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50; mix-blend-mode: screen; }
+.slider select { font: inherit; font-weight: 700; border: 2px solid #2b2d42; border-radius: 8px; padding: 2px 6px; background: #fff; }
+.howto { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(11,16,51,.6); pointer-events: auto; z-index: 20; }
+.howto-card { width: 900px; max-width: 95vw; max-height: 90vh; overflow: auto; background: #fff7e6; color: #2b2d42; border: 4px solid #2b2d42; border-radius: 24px; padding: 18px 22px; box-shadow: 0 10px 0 #2b2d42; text-align: center; }
+.howto-card h2 { margin: 0 0 10px; font-size: 30px; }
+.howto-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; text-align: left; margin-bottom: 12px; }
+.howto-grid section { background: #fff; border: 3px solid #2b2d42; border-radius: 14px; padding: 8px 12px; }
+.howto-grid h3 { margin: 0 0 4px; font-size: 16px; }
+.howto-grid p { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.logo span { display: inline-block; animation: logoBob 2.4s ease-in-out infinite; }
+.logo span:last-child { animation-delay: .4s; }
+@keyframes logoBob { 50% { transform: translateY(-6px) rotate(-1.5deg); } }
+.btn { transition: transform .08s, box-shadow .08s, background .15s; }
+.btn:hover:not(:disabled) { transform: translateY(-2px) scale(1.02); }

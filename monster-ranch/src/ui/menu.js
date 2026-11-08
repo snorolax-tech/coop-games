@@ -25,6 +25,7 @@ export class MainMenu {
               <button class="btn" data-a="continue">▶ Continue Solo</button>
               <button class="btn" data-a="new">🌱 New Ranch</button>
             </div>
+            <button class="btn" data-a="howto">📖 How to Play</button>
             <p class="hint">Host uses your saved ranch (or starts a new one) and gives you a code for your friend.</p>
           </div>
           <div class="menu-join menu-buttons hidden">
@@ -46,6 +47,25 @@ export class MainMenu {
     const $ = (s) => this.el.querySelector(s);
     this.$ = $;
     $('.ver').textContent = handlers.version || 'dev';
+    // any click in the menu wakes up the audio (browsers need a click first) and plays a tick
+    this.el.addEventListener('click', (e) => { if (e.target.closest('button')) handlers.onClick?.(); });
+    this.howto = h(`<div class="howto hidden"><div class="howto-card">
+      <h2>📖 How to Play</h2>
+      <div class="howto-grid">
+        <section><h3>🌱 Getting started</h3><p>Pick a starter partner. Explore <b>Zone 1 · Breezy Meadow</b> through the north gate. Look at creatures to fill your <b>Dex</b> (Tab). Gather berries, wood and stone — sell them at the <b>Shop</b>.</p></section>
+        <section><h3>⚔️ Battles</h3><p>Select your <b>Partner (6)</b>, aim at a wild creature and click. Pick moves with the mouse or <b>1-4</b>. Type matchups matter (see the Dex type chart). Your whole party earns XP.</p></section>
+        <section><h3>🔵 Befriending</h3><p>Weaken a creature, then press <b>Throw Bond Orb (C)</b> in battle — or sneak up and throw from behind. Calm it with a treat first for a bonus. Rare creatures need <b>both</b> ranchers working together!</p></section>
+        <section><h3>🏡 Your ranch</h3><p>Press <b>B</b> on the ranch to build pens, troughs, decorations, fences and more. Send creatures to the ranch at the <b>Barn</b>. Feed (tap E), pet (hold E) and brush them — happy creatures produce resources.</p></section>
+        <section><h3>🥚 Breeding & evolution</h3><p>Two happy creatures of the same or a combo type in a <b>Breeding Pen</b> lay an egg — carry it to an <b>Incubator</b>. Creatures evolve by level or happiness.</p></section>
+        <section><h3>⭐ Ranch Rating</h3><p>Fill the Dex, befriend creatures, find landmarks, build and complete <b>Notice Board</b> requests to raise your rating. Higher ratings open Zones 2-4 — and calm the four <b>Zone Guardians</b>!</p></section>
+        <section><h3>🤝 Playing together</h3><p>One player clicks <b>Host Ranch</b> and shares the 5-letter code; the other clicks <b>Join Ranch</b>. Team battles unlock <b>combo attacks</b>. Aim your partner at your friend for a <b>friendly battle</b>.</p></section>
+        <section><h3>🎮 Keys</h3><p><b>WASD</b> move · <b>Space</b> jump · <b>Shift</b> sprint · <b>E</b> interact · <b>1-6</b> items · <b>F</b> walk with partner · <b>Q</b> next partner · <b>B</b> build · <b>M</b> map · <b>Tab</b> inventory · <b>Enter</b> chat · <b>Esc</b> pause</p></section>
+      </div>
+      <button class="btn primary" data-a="closehow">Got it!</button>
+    </div></div>`);
+    root.appendChild(this.howto);
+    $('[data-a=howto]').onclick = () => this.howto.classList.remove('hidden');
+    this.howto.querySelector('[data-a=closehow]').onclick = () => this.howto.classList.add('hidden');
     const name = $('.name');
     name.value = this.profile.name;
     name.addEventListener('input', () => { this.profile.name = name.value.trim() || 'Rancher'; this._persist(); });

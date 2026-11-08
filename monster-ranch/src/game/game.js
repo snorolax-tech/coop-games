@@ -42,6 +42,8 @@ import { GUARDIANS } from '../data/creatures.js';
 import { Minimap } from '../ui/minimap.js';
 import { Companion } from '../creatures/companion.js';
 import { setLookTarget } from '../creatures/model.js';
+import { Music } from '../core/music.js';
+import { Ambient } from '../world/ambient.js';
 import { DuelPrompt } from '../ui/battle.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
@@ -138,6 +140,10 @@ export class Game {
     this.shop = new ShopPanel(uiRoot, this);
     this.board = new BoardPanel(uiRoot, this);
     this.minimap = new Minimap(uiRoot, this);
+    this.setQuality(localStorage.getItem('mr-gfx') || 'high');
+    this.music = new Music(this.audio);
+    this.audio.onUnlock = () => this.music.play(this.music.wanted || 'title');
+    this.ambient = new Ambient(this);
     this.companion = new Companion(this, { local: true });
     this.friendComp = new Companion(this, { local: false });
     this.companionOut = localStorage.getItem('mr-companion') === '1';
@@ -189,9 +195,13 @@ export class Game {
       const z = ZONES[zone];
       if (this.state === 'playing') { this.hud.banner(zoneTitle(zone), z.order ? `${z.subtitle} · wild creatures Lv ${z.levels}` : z.subtitle, z.color); this.audio.play('zone'); }
     };
-    p.onStep = (water) => this.audio.play(water ? 'stepWater' : 'step', 1);
+    p.onStep = (water) => {
+      this.audio.play(water ? 'stepWater' : 'step', 1);
+      // little dust puffs when sprinting
+      if (!water && Math.hypot(p.vel.x, p.vel.z) > 8) this.fx.puff(p.pos.clone().add(new THREE.Vector3(0, 0.1, 0)), 0xd9c38a, 4);
+    };
     p.onJump = () => this.audio.play('jump');
-    p.onLand = () => this.audio.play('land');
+    p.onLand = (v) => { this.audio.play('land'); this.fx.puff(p.pos.clone().add(new THREE.Vector3(0, 0.1, 0)), 0xd9c38a, Math.min(14, 4 + Math.round(v))); };
   }
 
   // --- networking ------------------------------------------------------------------
@@ -842,7 +852,7 @@ export class Game {
     inst.moves = [...to.moves];
     if (inherited && !inst.moves.includes(inherited)) inst.moves[3] = inherited;
     this.markCaught(to.id);
-    this.sharedBanner(`✨ ${sp.name} evolved into ${to.name}!`, actor ? `${actor.name}'s partner looks bigger and cooler!` : 'Your ranch creature looks bigger and cooler!', TYPES[to.type].color, 'chime');
+    this.sharedBanner(`✨ ${sp.name} evolved into ${to.name}!`, actor ? `${actor.name}'s partner looks bigger and cooler!` : 'Your ranch creature looks bigger and cooler!', TYPES[to.type].color, 'evolve');
     const where = actor === this.guestActor && this.remote ? this.remote.target : this.player.pos;
     this.worldFx('sparkle', where.clone().add(new THREE.Vector3(0, 1.5, 0)), 0xffe066);
     if (actor) this.partyChanged(actor);
@@ -1354,6 +1364,32 @@ export class Game {
     this.onStateChange?.(this.state, reason);
   }
 
+  /** Graphics quality: high (sharp + soft shadows), medium, low (no shadows, lower resolution). */
+  setQuality(q) {
+    this.quality = ['high', 'medium', 'low'].includes(q) ? q : 'high';
+    localStorage.setItem('mr-gfx', this.quality);
+    const r = this.renderer;
+    r.setPixelRatio(this.quality === 'high' ? Math.min(devicePixelRatio, 1.5) : this.quality === 'medium' ? 1 : 0.75);
+    r.setSize(innerWidth, innerHeight);
+    r.shadowMap.enabled = this.quality !== 'low';
+    const sun = this.world.sky.sun;
+    sun.castShadow = this.quality !== 'low';
+    const size = this.quality === 'high' ? 2048 : 1024;
+    if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+    this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+  }
+
+  /** Which music fits right now. */
+  _musicMood(myBattle) {
+    if (myBattle) {
+      if (myBattle.pvp) return 'pvp';
+      const boss = myBattle.foes.some((f) => this.creatures.list.get(f.nid)?.guardian || SPECIES_BY_ID[f.sp]?.rarity === 'legendary');
+      return boss ? 'boss' : 'battle';
+    }
+    if (this.world.sky.night > 0.65) return 'night';
+    return { ranch: 'ranch', meadow: 'meadow', forest: 'forest', lakeside: 'lakeside', volcano: 'volcano' }[this.player.zone] || 'ranch';
+  }
+
   get menuOpen() {
     return this.panel.open || this.chat.open || this.starter.open || this.barn.open || this.shopOpen || this.duelPrompt.open
       || (this._signEl && !this._signEl.classList.contains('hidden')) || this.state !== 'playing';
@@ -1463,6 +1499,7 @@ export class Game {
     const input = this.input;
 
     if (this.state === 'menu') {
+      this.music.play('title');
       this.menuAngle += dt * 0.05;
       const r = 58;
       this.camera.position.set(Math.sin(this.menuAngle) * r, 22, Math.cos(this.menuAngle) * r);
@@ -1547,6 +1584,8 @@ export class Game {
     if (this.state === 'playing' && !this.chat.open && input.pressedAny('KeyM')) { this.minimap.toggleFull(); this.audio.play('ui'); }
     this.minimap.update(dt);
     setLookTarget(this.camera.position);
+    this.ambient.update(dt);
+    this.music.play(this._musicMood(myBattle));
     this.buildMode.update(dt, input);
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);

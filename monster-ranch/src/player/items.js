@@ -1,4 +1,4 @@
-// Held items: hotbar selection (1-5 / wheel), first-person viewmodels, throwing with an
+﻿// Held items: hotbar selection (1-5 / wheel), first-person viewmodels, throwing with an
 // aim arc (right mouse), and tool swings (brush, watering can, hammer).
 import * as THREE from 'three';
 import { HOTBAR } from '../data/items.js';
@@ -175,6 +175,7 @@ export class HeldItems {
     const vel = this._throwVelocity(new THREE.Vector3(), player.aiming);
     vel.x += player.vel.x * 0.5; vel.z += player.vel.z * 0.5;
     this.game.requestThrow(cur.item, origin, vel);
+    player.fov += 4; // little camera kick
     this.swingLen = this.swing = 0.35;
     this.cooldown = 0.45;
     this.swings = (this.swings || 0) + 1;

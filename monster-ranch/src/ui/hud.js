@@ -86,6 +86,22 @@ export class HUD {
 
   setClickHint(v) { this.$('.click-hint').classList.toggle('hidden', !v); }
 
+  /** Quick full-screen colour flash (big hits, combos). */
+  flash(color = '#ffffff', strength = 0.4) {
+    if (!this._flash) {
+      this._flash = document.createElement('div');
+      this._flash.className = 'screen-flash';
+      document.body.appendChild(this._flash);
+    }
+    const f = this._flash;
+    f.style.transition = 'none';
+    f.style.background = color;
+    f.style.opacity = strength;
+    void f.offsetWidth;
+    f.style.transition = 'opacity .35s ease-out';
+    f.style.opacity = 0;
+  }
+
   /**
    * "XP gained" popup: one row per creature with an animated XP bar.
    * gains: [{ sp, shiny, name, gain, ups, fromPct, lvl, xp, next }]
@@ -123,6 +139,7 @@ export class HUD {
         setTimeout(() => { bar.style.width = final; }, 80);
       }
     });
+    if (gains.some((g) => g.ups)) this.game.audio.play('levelup');
     clearTimeout(this._xpHide);
     const long = gains.some((g) => g.ups) ? 5200 : gains.length > 1 ? 4200 : 2600;
     this._xpHide = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.classList.add('hidden'), 400); }, long);

@@ -1,4 +1,4 @@
-// Client-side battle visuals (runs on host and guest): partner creature models, attack
+﻿// Client-side battle visuals (runs on host and guest): partner creature models, attack
 // lunges, type-coloured impact bursts, damage numbers, faints, and the Bond Orb catch
 // sequence (orb drops, wobbles, then either sparkles or bursts open).
 import * as THREE from 'three';
@@ -98,7 +98,7 @@ export class BattleView {
         if (r.miss) { this._text(hit, 'MISS', '#ffffff'); g.audio.play('swing'); return; }
         if (r.dmg) {
           g.fx.puff(hit, color, 10 + Math.round(r.dmg / 3));
-          if (r.crit || r.eff > 1) g.fx.sparkle(hit, 0xffffff, 16);
+          if (r.crit || r.eff > 1) { g.fx.sparkle(hit, 0xffffff, 16); g.hud.flash(r.crit ? '#ffffff' : TYPES[r.type].color, 0.35); }
           this.anims.push({ who: ev.t, kind: 'hit', t: 0, dur: 0.4, dir });
           this._text(hit, String(r.dmg), r.eff > 1 ? '#ffd166' : r.eff < 1 ? '#b8c0cc' : '#ffffff');
           g.audio.play(r.eff > 1 ? 'knock' : 'bounce', 1);
@@ -113,8 +113,9 @@ export class BattleView {
       const cols = ev.types.map((t) => new THREE.Color(TYPES[t].color).getHex());
       for (const k of ev.pair) this.anims.push({ who: k, kind: 'hit', t: 0, dur: 0.5, dir: new THREE.Vector3(0, 0, 0) });
       g.hud.banner(`💥 ${ev.combo}!`, 'Co-op combo attack', TYPES[ev.types[0]].color);
-      g.audio.play('chime'); g.audio.play('knock');
+      g.audio.play('flash'); g.audio.play('knock');
       g.player.shake = 1.2;
+      g.hud.flash(TYPES[ev.types[0]].color, 0.6);
       ev.hits.forEach((h, i) => {
         const tgt = this._find(h.t);
         if (!tgt) return;
@@ -192,7 +193,7 @@ export class BattleView {
       const pos = orb.position.clone();
       if (ev.ok) {
         this.game.fx.sparkle(pos.clone().add(new THREE.Vector3(0, 0.3, 0)), 0xffe066, 30);
-        this.game.audio.play('chime');
+        this.game.audio.play('caught');
         k.linger = 1.2;
       } else {
         this.game.fx.puff(pos, 0xffffff, 18);

@@ -1,12 +1,24 @@
-// Tiny synthesized sound effects with the Web Audio API (no audio files).
-// Music and richer sounds come in the polish stage.
+﻿// Synthesized sound effects with the Web Audio API (no audio files).
+// Routing: sound effects -> sfx bus, music -> music bus, both -> master -> speakers.
 export class Audio {
   constructor() {
     this.ctx = null;
     this.master = null;
-    this.volume = 0.5;
+    const s = JSON.parse(localStorage.getItem('mr-audio') || '{}');
+    this.volume = s.volume ?? 0.5;
+    this.sfxVolume = s.sfx ?? 0.9;
+    this.musicVolume = s.music ?? 0.5;
     this.muted = false;
     this._noise = null;
+  }
+
+  setVolumes({ volume = this.volume, sfx = this.sfxVolume, music = this.musicVolume } = {}) {
+    this.volume = volume; this.sfxVolume = sfx; this.musicVolume = music;
+    localStorage.setItem('mr-audio', JSON.stringify({ volume, sfx, music }));
+    if (!this.ctx) return;
+    this.master.gain.value = volume;
+    this.sfxBus.gain.value = sfx;
+    this.musicBus.gain.value = music;
   }
 
   unlock() {
@@ -17,6 +29,9 @@ export class Audio {
     this.master = this.ctx.createGain();
     this.master.gain.value = this.volume;
     this.master.connect(this.ctx.destination);
+    this.sfxBus = this.ctx.createGain(); this.sfxBus.gain.value = this.sfxVolume; this.sfxBus.connect(this.master);
+    this.musicBus = this.ctx.createGain(); this.musicBus.gain.value = this.musicVolume; this.musicBus.connect(this.master);
+    this.onUnlock?.();
     const len = this.ctx.sampleRate;
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -32,7 +47,7 @@ export class Audio {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.sfxBus);
     o.start(t); o.stop(t + dur + 0.05);
   }
 
@@ -44,7 +59,7 @@ export class Audio {
     const g = c.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(f); f.connect(g); g.connect(this.master);
+    s.connect(f); f.connect(g); g.connect(this.sfxBus);
     s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
   }
 
@@ -82,6 +97,17 @@ export class Audio {
       case 'zone': [523, 659, 784].forEach((f, i) => this._tone(f, 0.35, { type: 'triangle', vol: 0.12, delay: i * 0.12 })); break;
       case 'plink': this._tone(1400, 0.4, { type: 'sine', vol: 0.18, slide: 0.7, delay: 0.5 }); break;
       case 'chime': [784, 988, 1175, 1568].forEach((f, i) => this._tone(f, 0.6, { type: 'sine', vol: 0.12, delay: i * 0.1 })); break;
+      // ---- jingles ----
+      case 'levelup': [523, 659, 784, 1047].forEach((f, i) => this._tone(f, i === 3 ? 0.5 : 0.14, { type: 'square', vol: 0.07, delay: i * 0.09 })); this._tone(1568, 0.6, { type: 'triangle', vol: 0.08, delay: 0.36 }); break;
+      case 'caught': [659, 784, 988, 784, 1319].forEach((f, i) => this._tone(f, i === 4 ? 0.7 : 0.13, { type: 'triangle', vol: 0.13, delay: i * 0.12 })); break;
+      case 'evolve': for (let i = 0; i < 8; i++) this._tone(440 * Math.pow(2, i / 6), 0.25, { type: 'sine', vol: 0.09, delay: i * 0.11 }); this._tone(1760, 1.0, { type: 'triangle', vol: 0.1, delay: 0.95 }); break;
+      case 'flash': this._noiseBurst(0.25, { vol: 0.18, freq: 3000, sweep: 0.3, q: 0.6 }); this._tone(110, 0.25, { type: 'sine', vol: 0.25, slide: 0.5 }); break;
+      // ---- ambience ----
+      case 'bird': { const b = 2200 + Math.random() * 1400; for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) this._tone(b * (1 + Math.random() * 0.2), 0.07, { type: 'sine', vol: 0.045 * k, slide: 1.25, delay: i * 0.11 }); break; }
+      case 'cricket': for (let i = 0; i < 6; i++) this._tone(4200, 0.025, { type: 'square', vol: 0.012 * k, delay: i * 0.045 }); break;
+      case 'waterlap': this._noiseBurst(0.6, { vol: 0.05 * k, freq: 700, sweep: 0.6, q: 0.7, type: 'lowpass' }); break;
+      case 'rumble': this._noiseBurst(1.4, { vol: 0.12 * k, freq: 120, q: 0.8, type: 'lowpass' }); break;
+      case 'leaves': this._noiseBurst(0.8, { vol: 0.03 * k, freq: 2500, q: 0.4, type: 'highpass' }); break;
     }
   }
 }

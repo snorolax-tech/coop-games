@@ -204,7 +204,10 @@ export class PauseMenu {
           <button class="btn host-only" data-a="export">⬇ Export Save</button>
           <label class="btn file host-only">⬆ Import Save<input type="file" accept=".json,application/json" hidden></label>
           <p class="hint guest-only">The host keeps the save file for your shared ranch.</p>
-          <div class="slider"><span>🔊 Volume</span><input type="range" min="0" max="1" step="0.05" data-a="vol"></div>
+          <div class="slider"><span>🔊 Master</span><input type="range" min="0" max="1" step="0.05" data-a="vol"></div>
+          <div class="slider"><span>🎵 Music</span><input type="range" min="0" max="1" step="0.05" data-a="music"></div>
+          <div class="slider"><span>🔔 Sounds</span><input type="range" min="0" max="1" step="0.05" data-a="sfx"></div>
+          <div class="slider"><span>🖥 Graphics</span><select data-a="gfx"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low (faster)</option></select></div>
           <div class="slider"><span>🖱 Sensitivity</span><input type="range" min="0.0008" max="0.005" step="0.0001" data-a="sens"></div>
           <button class="btn danger" data-a="quit">⏏ Save & Quit to Menu</button>
           <p class="hint">Click the game to keep playing.</p>
@@ -220,8 +223,11 @@ export class PauseMenu {
     q('[data-a=copy]').onclick = () => {
       navigator.clipboard?.writeText(game.net.code || '').then(() => game.toast('Room code copied!', 'good'), () => {});
     };
-    const vol = q('[data-a=vol]'); vol.value = game.audio.volume;
-    vol.oninput = () => { game.audio.volume = +vol.value; if (game.audio.master) game.audio.master.gain.value = +vol.value; };
+    const vol = q('[data-a=vol]'), mus = q('[data-a=music]'), sfx = q('[data-a=sfx]'), gfx = q('[data-a=gfx]');
+    vol.value = game.audio.volume; mus.value = game.audio.musicVolume; sfx.value = game.audio.sfxVolume; gfx.value = game.quality;
+    const setVol = () => game.audio.setVolumes({ volume: +vol.value, music: +mus.value, sfx: +sfx.value });
+    vol.oninput = setVol; mus.oninput = setVol; sfx.oninput = () => { setVol(); game.audio.play('ui'); };
+    gfx.onchange = () => game.setQuality(gfx.value);
     const sens = q('[data-a=sens]');
     sens.oninput = () => { game.player.sensitivity = +sens.value; };
     this.sens = sens;
