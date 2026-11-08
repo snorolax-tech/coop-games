@@ -42,7 +42,7 @@ Debug: in the browser console, `game.unlockAll()` opens every zone.
 - [x] **3. Battles + physical Bond Orb catching**: starter partner, in-world turn-based battles (1v1, or 2v2 team battles in co-op), XP/levels, catching with sneak/behind/co-op bonuses, rare creatures need teamwork
 - [x] **4. Ranch**: build mode (pens, troughs, pond, decorations), Barn to move creatures to the ranch, roaming/playing/sleeping ranch creatures, feeding/petting/brushing/cleaning, happiness, resource production
 - [x] **5. Online multiplayer (PeerJS)**: host/join, shared world, avatars, chat (pulled forward; 2v2 battles and co-op catching arrive with stages 3 and 6)
-- [ ] 6. Breeding, eggs, training, evolution, combo moves
+- [x] **6. Breeding pen → eggs → incubator → hatching (move inheritance, bred shinies), Training Yard XP, evolution by level or happiness, co-op combo moves**
 - [ ] 7. Shop, notice board, more zones, guardians, saving
 - [ ] 8. Polish: menus, music, particles, juice
 
