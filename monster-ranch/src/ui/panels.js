@@ -1,9 +1,9 @@
-// Tab panel (Inventory / Party / Creature Dex) and the pause menu.
+﻿// Tab panel (Inventory / Party / Creature Dex) and the pause menu.
 import { ITEMS } from '../data/items.js';
 import { SPECIES, SPECIES_BY_ID } from '../data/creatures.js';
 import { TYPES, RARITY, PERSONALITIES, CHART, CREATURE_TYPES, COMBOS, effectiveness } from '../data/types.js';
 import { MOVES } from '../data/moves.js';
-import { ZONES, WILD_ZONES } from '../world/zones.js';
+import { ZONES, WILD_ZONES, zoneTitle } from '../world/zones.js';
 import { portrait } from '../creatures/portraits.js';
 import { xpToNext } from '../battle/rules.js';
 
@@ -88,7 +88,7 @@ export class TabPanel {
     const g = this.game, r = g.rating;
     const zones = WILD_ZONES.map((id) => {
       const z = ZONES[id], open = g.unlocked.has(id);
-      return `<span class="zone-chip ${open ? 'open' : ''}" style="--zc:${z.color}">${open ? '🔓' : '🔒'} ${z.name} <small>(${z.rating})</small></span>`;
+      return `<span class="zone-chip ${open ? 'open' : ''}" style="--zc:${z.color}">${open ? '🔓' : '🔒'} ${zoneTitle(id)} <small>(Rating ${z.rating} · Lv ${z.levels})</small></span>`;
     }).join('');
     const rows = (r.breakdown || []).map((b) => `<tr><td>${b.label}</td><td>${b.count}${b.cap ? ` <small>(max ${b.cap})</small>` : ''}</td><td>×${b.each}</td><td><b>${b.pts}</b></td></tr>`).join('');
     return `<div class="rating-box">
@@ -153,7 +153,7 @@ function dexDetailHTML(sp, dex) {
     const to = SPECIES_BY_ID[sp.evolve.to];
     evo = `Evolves into <b>${dex.seen.has(to.id) ? to.name : '???'}</b> ${sp.evolve.level ? `at level ${sp.evolve.level}` : 'when very happy'}.`;
   } else if (sp.evolvesFrom) evo = `Evolves from <b>${SPECIES_BY_ID[sp.evolvesFrom].name}</b>.`;
-  const where = sp.habitat.length ? sp.habitat.map((z) => ZONES[z].name).join(', ') : 'Unknown… only the most beloved ranches';
+  const where = sp.habitat.length ? sp.habitat.map((z) => zoneTitle(z)).join(', ') : 'Unknown… only the most beloved ranches';
   const when = { day: '☀️ Daytime (naps at night)', night: '🌙 Night only', any: '🌗 Day and night' }[sp.time];
   return `
     <button class="btn small" data-a="back">← Back</button>

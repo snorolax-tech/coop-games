@@ -39,17 +39,27 @@ export class Input {
     addEventListener('wheel', (e) => { if (this.locked && e.deltaY) this.wheel += Math.sign(e.deltaY); }, { passive: true });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
+      this.lockPending = false;
       if (!this.locked) { this.keys.clear(); this.mouseDown.clear(); }
-      this.onLockChange?.(this.locked);
+      this.onLockChange?.(this.locked, this._expectUnlock);
+      this._expectUnlock = false;
     });
+    document.addEventListener('pointerlockerror', () => { this.lockPending = false; this.onLockFail?.(); });
   }
+  /** Ask for pointer lock. Browsers may refuse without a recent click/keypress; onLockFail then fires. */
   requestLock() {
+    if (this.locked) return;
+    this.lockPending = true;
     try {
       const p = this.canvas.requestPointerLock();
-      if (p && p.catch) p.catch(() => {});
-    } catch { /* ignore */ }
+      if (p && p.catch) p.catch(() => { this.lockPending = false; this.onLockFail?.(); });
+    } catch { this.lockPending = false; this.onLockFail?.(); }
+    // some browsers neither resolve nor error: give up waiting after a moment
+    clearTimeout(this._lockTimer);
+    this._lockTimer = setTimeout(() => { if (this.lockPending && !this.locked) { this.lockPending = false; this.onLockFail?.(); } }, 600);
   }
-  exitLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+  /** Release the pointer on purpose (menus, battle move picking) — not a pause. */
+  exitLock() { if (document.pointerLockElement) { this._expectUnlock = true; document.exitPointerLock(); } }
   isDown(code) { return this.locked && this.keys.has(code); }
   /** Pressed this frame, only while playing (pointer locked). */
   wasPressed(code) { return this.locked && this.pressed.has(code); }

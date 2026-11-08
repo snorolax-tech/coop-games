@@ -1,7 +1,7 @@
-// Minimap (top-right, follows you, north is up) and a full world map (press M).
+﻿// Minimap (top-right, follows you, north is up) and a full world map (press M).
 // Shows zones in their colours with names and lock status, you and your friend as arrows,
 // landmarks, guardian lairs and the ranch.
-import { ZONES, WILD_ZONES, HUB_R, zoneAt } from '../world/zones.js';
+import { ZONES, WILD_ZONES, HUB_R, zoneAt, zoneTitle } from '../world/zones.js';
 import { LAKE, VOLCANO, WATER_Y, groundY } from '../world/terrain.js';
 import { GUARDIANS, SPECIES_BY_ID } from '../data/creatures.js';
 
@@ -172,7 +172,7 @@ export class Minimap {
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('N', half, 12);
     this._arrow(ctx, half, half, g.player.yaw, g.profile.color || '#ef476f', 8);
     const z = ZONES[g.player.zone];
-    this.miniLabel.textContent = z.name;
+    this.miniLabel.textContent = zoneTitle(g.player.zone);
     this.miniLabel.style.background = z.color;
   }
 
@@ -195,7 +195,7 @@ export class Minimap {
       const z = ZONES[id];
       const [x, y] = toBig(Math.sin(z.angle) * 118, -Math.cos(z.angle) * 118);
       const open = g.unlocked.has(id);
-      label(z.name, open ? (g.guardiansCalmed.has(id) ? '💖 guardian calmed' : '🔓 open') : `🔒 Ranch Rating ${z.rating}`, x, y, z.color);
+      label(`${z.order}. ${z.name}`, open ? (g.guardiansCalmed.has(id) ? '💖 guardian calmed' : '🔓 open') : `🔒 Ranch Rating ${z.rating}`, x, y, z.color);
     }
     label('Sunny Ranch', '', ...toBig(0, 40), '#ffd166');
     for (const m of this._markers()) {

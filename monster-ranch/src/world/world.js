@@ -1,4 +1,4 @@
-// Builds the whole world: terrain, sky, the ranch hub, zone decoration, landmarks,
+﻿// Builds the whole world: terrain, sky, the ranch hub, zone decoration, landmarks,
 // locked-zone barriers and resource nodes.
 import * as THREE from 'three';
 import { rng, smoothstep } from '../core/noise.js';
@@ -198,7 +198,7 @@ export class World {
         this.colliders.circle(lx, lz, 0.45, groundY(lx, lz) + 5.5);
       }
       const beam = new THREE.Mesh(G.box, M('#6b3e2e')); beam.scale.set(10, 0.6, 0.7); beam.position.y = 5.6; gate.add(beam);
-      const sign = makeSign(zone.name, zone.color, 6.5);
+      const sign = makeSign(`${zone.order}. ${zone.name}`, zone.color, 6.5);
       sign.position.set(0, 4.6, 0.45);
       gate.add(sign);
       const sign2 = sign.clone(); sign2.position.z = -0.45; gate.add(sign2);

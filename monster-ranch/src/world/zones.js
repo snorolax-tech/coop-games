@@ -10,23 +10,30 @@ export const ZONES = {
     id: 'ranch', name: 'Sunny Ranch', subtitle: 'Home sweet home',
     color: '#ffd166',
   },
+  // order = which zone this is in the adventure (1 first, 4 last); levels = wild creature levels
   meadow: {
     id: 'meadow', name: 'Breezy Meadow', subtitle: 'Rolling hills and wildflowers',
-    angle: 0, rating: 0, color: '#9be15d',
+    angle: 0, rating: 0, color: '#9be15d', order: 1, levels: '2–7',
   },
   forest: {
     id: 'forest', name: 'Whisperwood Forest', subtitle: 'Tall trees and old secrets',
-    angle: Math.PI / 2, rating: 2, color: '#3fa34d',
+    angle: Math.PI / 2, rating: 2, color: '#3fa34d', order: 2, levels: '8–14',
   },
   lakeside: {
     id: 'lakeside', name: 'Glimmer Lakeside', subtitle: 'Cool water and soft sand',
-    angle: Math.PI, rating: 4, color: '#4cc9f0',
+    angle: Math.PI, rating: 4, color: '#4cc9f0', order: 3, levels: '13–20',
   },
   volcano: {
     id: 'volcano', name: 'Cinder Hills', subtitle: 'Hot rocks and rumbling peaks',
-    angle: -Math.PI / 2, rating: 6, color: '#f3722c',
+    angle: -Math.PI / 2, rating: 6, color: '#f3722c', order: 4, levels: '19–28',
   },
 };
+
+/** "Zone 2 · Whisperwood Forest" (the ranch is just its name). */
+export function zoneTitle(id) {
+  const z = ZONES[id];
+  return z.order ? `Zone ${z.order} · ${z.name}` : z.name;
+}
 
 export const WILD_ZONES = ['meadow', 'forest', 'lakeside', 'volcano'];
 

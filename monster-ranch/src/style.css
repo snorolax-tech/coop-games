@@ -285,3 +285,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .bmove.bcatch { --tc: #3a86ff; flex: none; flex-direction: row; align-items: center; gap: 4px; }
 .bmove.bcatch small { opacity: .7; }
 .bmove:disabled { opacity: .45; cursor: not-allowed; }
+.click-hint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); background: rgba(43,45,66,.88); border: 2px solid #ffd166; padding: 8px 16px; border-radius: 999px; font-weight: 800; animation: toastIn .2s ease-out; }

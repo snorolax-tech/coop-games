@@ -1,6 +1,6 @@
 ﻿// In-game HUD: crosshair, look-at label, hotbar, clock/zone, coins, toasts, zone banner.
 import { HOTBAR, ITEMS } from '../data/items.js';
-import { ZONES } from '../world/zones.js';
+import { ZONES, zoneTitle } from '../world/zones.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 
@@ -11,6 +11,7 @@ export class HUD {
       <div class="hud hidden">
         <div class="crosshair"><span></span></div>
         <div class="hold-ring"><i></i></div>
+        <div class="click-hint hidden">🖱️ Click (or press any key) to keep playing</div>
         <div class="look"><div class="look-name"></div><div class="look-sub"></div></div>
         <div class="topleft">
           <div class="zone-pill"><span class="zone-dot"></span><span class="zone-name"></span></div>
@@ -76,6 +77,8 @@ export class HUD {
     this.$('.crosshair').classList.add('on');
   }
 
+  setClickHint(v) { this.$('.click-hint').classList.toggle('hidden', !v); }
+
   /** Progress ring for hold-E petting (0..1). */
   setHold(p) {
     const r = this.$('.hold-ring');
@@ -99,7 +102,7 @@ export class HUD {
 
   setZone(id) {
     const z = ZONES[id];
-    this.$('.zone-name').textContent = z.name;
+    this.$('.zone-name').textContent = zoneTitle(id);
     this.$('.zone-dot').style.background = z.color;
   }
 

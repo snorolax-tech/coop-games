@@ -1,4 +1,4 @@
-// Game orchestrator: owns the renderer, scene, world, player and UI, runs the loop and
+﻿// Game orchestrator: owns the renderer, scene, world, player and UI, runs the loop and
 // handles game state (menu / playing / paused / panel), inventory, saving and co-op.
 //
 // Co-op model: the host is authoritative. Every world-changing action goes through an
@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { Input } from '../core/input.js';
 import { Audio } from '../core/audio.js';
 import { World } from '../world/world.js';
-import { ZONES, WILD_ZONES } from '../world/zones.js';
+import { ZONES, WILD_ZONES, zoneTitle } from '../world/zones.js';
 import { Player } from '../player/player.js';
 import { HeldItems } from '../player/items.js';
 import { Rancher } from '../player/rancher.js';
@@ -144,7 +144,11 @@ export class Game {
 
     this._wirePlayer();
     this._wireNet();
-    this.input.onLockChange = (locked) => this._onLock(locked);
+    this.input.onLockChange = (locked, expected) => this._onLock(locked, expected);
+    // the browser refused to recapture the mouse (it needs a click): show a small hint, not the pause menu
+    this.input.onLockFail = () => {
+      if (this.state === 'playing' && !this.menuOpen && !this.input.locked) this.hud.setClickHint(true);
+    };
     canvas.addEventListener('click', () => {
       this.audio.unlock();
       if (this.starter.open) return;
@@ -175,13 +179,13 @@ export class Game {
       const now = performance.now();
       if (now - this._blockToastAt < 2500) return;
       this._blockToastAt = now;
-      this.toast(`🔒 ${ZONES[zone].name} opens at Ranch Rating ${ZONES[zone].rating} (you're at ${this.rating.level}) — fill the Dex, befriend creatures and find landmarks!`, 'muted');
+      this.toast(`🔒 ${zoneTitle(zone)} opens at Ranch Rating ${ZONES[zone].rating} (you're at ${this.rating.level}) — fill the Dex, befriend creatures and find landmarks!`, 'muted');
       this.audio.play('locked');
     };
     p.onZone = (zone) => {
       this.hud.setZone(zone);
       const z = ZONES[zone];
-      if (this.state === 'playing') { this.hud.banner(z.name, z.subtitle, z.color); this.audio.play('zone'); }
+      if (this.state === 'playing') { this.hud.banner(zoneTitle(zone), z.order ? `${z.subtitle} · wild creatures Lv ${z.levels}` : z.subtitle, z.color); this.audio.play('zone'); }
     };
     p.onStep = (water) => this.audio.play(water ? 'stepWater' : 'step', 1);
     p.onJump = () => this.audio.play('jump');
@@ -680,7 +684,7 @@ export class Game {
       this.unlocked.add(id);
       this.world.setUnlocked(id, true);
       this.worldEvent({ t: 'unlock', id });
-      this.sharedBanner(`${ZONES[id].name} is open!`, `${actor.name} bought a Zone Pass — go explore!`, ZONES[id].color, 'zone');
+      this.sharedBanner(`${zoneTitle(id)} is open!`, `${actor.name} bought a Zone Pass — go explore!`, ZONES[id].color, 'zone');
       this.ranchChanged();
     } else if (op === 'sell') {
       const it = ITEMS[id];
@@ -849,7 +853,7 @@ export class Game {
     }
     if (!opened.length || silent) return;
     setTimeout(() => {
-      for (const id of opened) this.sharedBanner(`${ZONES[id].name} is open!`, 'The barrier at the gate has faded — go explore!', ZONES[id].color, 'zone');
+      for (const id of opened) this.sharedBanner(`${zoneTitle(id)} is open!`, 'The barrier at the gate has faded — go explore!', ZONES[id].color, 'zone');
     }, 3600);
     this.save();
   }
@@ -1257,9 +1261,13 @@ export class Game {
     this.onStateChange?.(this.state, reason);
   }
 
-  _onLock(locked) {
-    if (locked) { this.pause.show(false); this.battleCursor = false; return; }
-    if (this.battleCursor) return; // freed on purpose to click battle moves
+  get menuOpen() {
+    return this.panel.open || this.chat.open || this.starter.open || this.barn.open || this.shopOpen || this.duelPrompt.open || this.state !== 'playing';
+  }
+
+  _onLock(locked, expected) {
+    if (locked) { this.pause.show(false); this.battleCursor = false; this.hud.setClickHint(false); return; }
+    if (expected || this.battleCursor) return; // we released it on purpose (menu / battle move picking)
     if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open && !this.barn.open && !this.shopOpen) {
       this.state = 'paused';
       this.pause.show(true);
@@ -1379,7 +1387,7 @@ export class Game {
     if (this.state === 'playing' && input.wasPressed('Enter') && !this.chat.open && !this.panel.open) this.chat.openInput();
     if (this.panel.open) {
       if (input.pressedAny('Tab')) this.closePanel();
-      else if (input.pressedAny('Escape')) { this.panel.toggle(false); this.state = 'paused'; this.pause.show(true); }
+      else if (input.pressedAny('Escape')) this.closePanel();
     } else if (this.state === 'playing' && input.wasPressed('Tab')) {
       this.openPanel();
     }
@@ -1423,10 +1431,15 @@ export class Game {
       if (input.pressedAny('KeyR')) { this.requestRun(); if (!input.locked) input.requestLock(); }
       if (input.pressedAny('KeyC')) this.throwOrbInBattle();
     }
-    // battle ended while the cursor was free: wait for a click to keep playing
-    if (!myBattle && this.battleCursor && !input.locked) {
+    // battle ended while the cursor was free: grab the mouse back automatically
+    if (!myBattle && this.battleCursor && !input.locked && !input.lockPending) {
       this.battleCursor = false;
-      if (this.state === 'playing') { this.state = 'paused'; this.pause.show(true); }
+      if (this.state === 'playing') input.requestLock();
+    }
+    if (input.locked || this.menuOpen || this.battleCursor) this.hud.setClickHint(false);
+    // mouse not captured but nothing needs it: recapture on any key press (a keypress counts as a click for the browser)
+    if (this.state === 'playing' && !input.locked && !input.lockPending && !this.menuOpen && !this.battleCursor) {
+      if (input.pressed.size && !input.pressedAny('Escape')) input.requestLock();
     }
     this.ranchSim.update(dt);
     this.buildings.update(this.world.sky.night, dt);

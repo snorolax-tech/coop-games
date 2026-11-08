@@ -1,7 +1,7 @@
-// Ranch Shop (buy supplies / upgrades / zone passes, sell resources) and Notice Board panels.
+﻿// Ranch Shop (buy supplies / upgrades / zone passes, sell resources) and Notice Board panels.
 import { ITEMS } from '../data/items.js';
 import { SUPPLIES, UPGRADES, ZONE_PASSES } from '../data/shop.js';
-import { ZONES } from '../world/zones.js';
+import { ZONES, zoneTitle } from '../world/zones.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 
@@ -44,7 +44,7 @@ export class ShopPanel extends Modal {
     } else if (this.tab === 'zones') {
       html += `<div class="shop-list">${Object.entries(ZONE_PASSES).map(([id, price]) => {
         const z = ZONES[id], open = g.unlocked.has(id);
-        return `<div class="shop-row"><div class="item-icon">🎫</div><div class="shop-info"><b>${z.name} Pass</b><div class="hint">Opens the zone now instead of at Ranch Rating ${z.rating}.</div></div>
+        return `<div class="shop-row"><div class="item-icon">🎫</div><div class="shop-info"><b>${zoneTitle(id)} Pass</b><div class="hint">Opens the zone now instead of at Ranch Rating ${z.rating}.</div></div>
           ${open ? '<span class="owned">🔓 Open</span>' : `<button class="btn small" data-zone="${id}" ${inv.coins < price ? 'disabled' : ''}>🪙 ${price}</button>`}</div>`;
       }).join('')}</div>`;
     } else {
