@@ -27,6 +27,16 @@ export function makeViewModel(id) {
       g.add(body, spout, handle);
       break;
     }
+    case 'partner': {
+      const top = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), M('#06d6a0'));
+      const bot = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M('#fff6e0'));
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.014, 6, 18), M('#2b2d42'));
+      band.rotation.x = Math.PI / 2;
+      const paw = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), M('#ffffff', { emissive: 0x335544 }));
+      paw.position.z = 0.1;
+      g.add(top, bot, band, paw);
+      break;
+    }
     case 'hammer': {
       const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.05), M('#c98d4b')); handle.position.y = -0.05;
       const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.1), M('#8d99ae')); head.position.y = 0.17;
@@ -91,8 +101,14 @@ export class HeldItems {
   update(dt, input, player, canAct) {
     this.time += dt;
     // switching
-    for (let k = 0; k < HOTBAR.length; k++) if (input.wasPressed('Digit' + (k + 1))) this.select(k);
+    // in battle, 1-4 pick moves instead of items (the wheel still switches items)
+    const inBattle = this.game.inBattle;
+    for (let k = 0; k < HOTBAR.length; k++) {
+      if (inBattle && k < 4) continue;
+      if (input.wasPressed('Digit' + (k + 1))) this.select(k);
+    }
     if (input.wheel) this.select(this.index + input.wheel);
+    if (canAct && input.wasPressed('KeyQ') && !inBattle) this.game.cycleLead();
 
     const cur = this.current;
     const isThrow = cur.kind === 'throw';
@@ -101,6 +117,7 @@ export class HeldItems {
 
     if (canAct && input.clicked(0) && this.cooldown <= 0) {
       if (isThrow) this._throw(player);
+      else if (cur.kind === 'partner') this._sendPartner();
       else this._useTool(cur.id);
     }
 
@@ -160,6 +177,19 @@ export class HeldItems {
     this.swingLen = this.swing = 0.35;
     this.cooldown = 0.45;
     this.swings = (this.swings || 0) + 1;
+  }
+
+  _sendPartner() {
+    this.swingLen = this.swing = 0.35;
+    this.cooldown = 0.6;
+    this.swings = (this.swings || 0) + 1;
+    const g = this.game;
+    if (!g.party.length) { g.toast('You don\'t have a partner yet!', 'muted'); return; }
+    const t = g.interactions.target;
+    if (!t?.speciesId) { g.toast('Aim at a wild creature, then click to send out your partner!', 'muted'); return; }
+    if (g.interactions.hitDist > 30) { g.toast('Too far — get within 30 m.', 'muted'); return; }
+    g.audio.play('throw');
+    g.requestBattle(t);
   }
 
   _useTool(id) {

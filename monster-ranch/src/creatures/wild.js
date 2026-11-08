@@ -73,8 +73,12 @@ class WildCreature {
       sub: () => {
         const bits = [`${t.icon} ${t.name}`, `${pers.icon} ${pers.name}`];
         if (this.sp.rarity !== 'common') bits.push('★'.repeat(RARITY[this.sp.rarity].stars) + ' ' + RARITY[this.sp.rarity].name);
-        if (this.sleeping) bits.push('Zz Sleeping');
-        return bits.join('  ·  ') + (mgr.game.interactions.hitDist <= 3.5 ? '   —   E  Pet' : '');
+        if (this.battleId || this.inBattle) bits.push(`⚔️ ${this.inst.hp}/${this.inst.stats.hp} HP`);
+        else if (this.sleeping) bits.push('Zz Sleeping');
+        else if (this.calmT > 0 || this.calm) bits.push('♥ Calm');
+        const g = mgr.game;
+        if (g.items.current.kind === 'partner' && !this.battleId) return bits.join('  ·  ') + '   —   Click: send out partner';
+        return bits.join('  ·  ') + (g.interactions.hitDist <= 3.5 ? '   —   E  Pet' : '');
       },
       use: (actor) => this.pet(actor),
     });
@@ -145,6 +149,7 @@ class WildCreature {
   }
 
   pet(actor) {
+    if (this.battleId || this.captured || this.fainted) return;
     const obs = this.mgr.observerFor(actor);
     if (this.sleeping) {
       this.sleeping = false;
@@ -169,28 +174,20 @@ class WildCreature {
   }
 
   onProjectileHit(p) {
+    if (this.captured || this.fainted) return 'bounce';
     if (p.kind === 'treat') {
+      if (this.battleId) return 'bounce';
       // snatched out of the air!
-      this.eat(null);
+      this.eat(null, p.owner);
       return 'consume';
     }
-    // Bond Orb: catching arrives in Stage 3 — for now it just startles them
-    const actor = this.mgr.game.actorById(p.owner);
-    actor?.toast(`Bonk! ${this.sp.name} isn't ready to bond yet (catching arrives in Stage 3).`, 'muted');
-    if (this.sleeping) this.sleeping = false;
-    this.focus = this.mgr.observerFor(actor) || this.mgr.nearestObserver(this.pos)?.obs;
-    this.say('!', 1);
-    this.cry('alarm');
-    this.calmT = 0;
-    if (this.inst.personality === 'grumpy') this.setState('charge', 5);
-    else if (this.inst.personality === 'lazy') this.setState('watch', 3);
-    else this.setState('flee', 5);
-    return 'bounce';
+    return this.mgr.game.catching.attempt(this, p);
   }
 
-  /** Go eat a treat lying on the ground (p) or eat one caught in the air (null). */
-  eat(p) {
-    if (p) { this.treat = p; this.sleeping = false; this.setState('eat', 12); this.say('?', 1); return; }
+  /** Go eat a treat lying on the ground (p) or eat one caught in the air (null). by = who threw it. */
+  eat(p, by) {
+    if (by) this.calmBy = by;
+    if (p) { this.treat = p; this.calmBy = p.owner; this.sleeping = false; this.setState('eat', 12); this.say('?', 1); return; }
     this.sleeping = false;
     this.calmT = 30;
     this.cooldown = 0;
@@ -248,6 +245,14 @@ class WildCreature {
     this.stateT -= dt;
     this.speed = 0;
     const walk = 1.2 + this.sp.base.spd / 60;
+
+    if (this.captured) return;
+    if (this.fainted) {
+      this.fadeT -= dt;
+      if (this.fadeT <= 0) this.mgr.remove(this, true);
+      return;
+    }
+    if (this.battleId) { this.excited = 0.3; this._placeY(); return; }
 
     // notice players
     const near = this.mgr.nearestObserver(this.pos);
@@ -355,12 +360,13 @@ class WildCreature {
 
   updateView(dt, camPos) {
     const dist = camPos.distanceTo(this.pos);
-    this.root.visible = dist < VIEW_DIST;
+    this.root.visible = dist < VIEW_DIST && !this.captured;
     this.root.position.copy(this.pos);
-    this.root.rotation.y = this.yaw;
+    this.root.rotation.set(0, this.yaw, this.fainted ? 1.3 : 0);
+    if (this.fainted) this.root.position.y -= 0.15;
     this.center.set(this.pos.x, this.pos.y + this.view.height * 0.5, this.pos.z);
     if (!this.root.visible) return;
-    this.view.update(dt, { speed: this.speed, sleeping: this.sleeping, excited: this.excited > 0 ? Math.min(1, this.excited) : 0 });
+    this.view.update(dt, { speed: this.speed, sleeping: this.sleeping || this.fainted, excited: this.excited > 0 ? Math.min(1, this.excited) : 0 });
     this.emote.update(dt);
   }
 }
@@ -442,6 +448,20 @@ export class WildCreatures {
     if (c.slot) { c.slot.creature = null; c.slot.cool = 20 + Math.random() * 20; }
   }
 
+  /** Remove a creature for good (caught, or fainted and wandered off). */
+  remove(c, puff = false) {
+    if (puff) this.game.worldFx('puff', c.center.clone(), 0xffffff);
+    this._despawn(c);
+  }
+
+  /** Host: a creature fainted in battle — it lies down, then wanders off. */
+  faint(c) {
+    c.fainted = true;
+    c.fadeT = 3;
+    c.sleeping = false;
+    c.say('…', 2.5);
+  }
+
   clear() {
     for (const c of [...this.list.values()]) this._despawn(c);
     for (const s of this.slots) s.cool = 0;
@@ -474,6 +494,7 @@ export class WildCreatures {
           const c = s.creature;
           const cd = this.nearestObserver(c.pos)?.dist ?? Infinity;
           const wrongTime = c.sp.time === 'night' && !night && cd > 50;
+          if (c.battleId || c.captured || c.fainted) continue;
           if ((cd > DESPAWN_DIST && c.state !== 'flee') || wrongTime) this._despawn(c);
         }
       }
@@ -506,16 +527,17 @@ export class WildCreatures {
   snapshot() {
     const out = [];
     for (const c of this.list.values()) {
-      out.push([c.nid, c.sp.num, c.inst.level, (c.inst.shiny ? 1 : 0) | (c.sleeping ? 2 : 0), PERSONALITY_IDS.indexOf(c.inst.personality),
+      const flags = (c.inst.shiny ? 1 : 0) | (c.sleeping ? 2 : 0) | (c.fainted ? 4 : 0) | (c.captured ? 8 : 0) | (c.battleId ? 16 : 0) | (c.calmT > 0 ? 32 : 0);
+      out.push([c.nid, c.sp.num, c.inst.level, flags, PERSONALITY_IDS.indexOf(c.inst.personality),
         Math.round(c.pos.x * 100) / 100, Math.round(c.pos.y * 100) / 100, Math.round(c.pos.z * 100) / 100,
-        Math.round(c.yaw * 100) / 100, Math.round(c.speed * 10), Math.round(c.excited * 10)]);
+        Math.round(c.yaw * 100) / 100, Math.round(c.speed * 10), Math.round(c.excited * 10), c.inst.hp]);
     }
     return out;
   }
 
   applySnapshot(arr) {
     const seen = new Set();
-    for (const [nid, num, level, flags, pers, x, y, z, yaw, spd, exc] of arr) {
+    for (const [nid, num, level, flags, pers, x, y, z, yaw, spd, exc, hp] of arr) {
       seen.add(nid);
       let c = this.list.get(nid);
       if (!c) {
@@ -530,6 +552,11 @@ export class WildCreatures {
       c.netYaw = yaw;
       c.netSpeed = spd / 10;
       c.sleeping = !!(flags & 2);
+      c.fainted = !!(flags & 4);
+      c.captured = !!(flags & 8);
+      c.inBattle = !!(flags & 16);
+      c.calm = !!(flags & 32);
+      if (hp !== undefined) c.inst.hp = hp;
       c.excited = exc / 10;
     }
     for (const [nid, c] of this.list) if (!seen.has(nid)) { c.dispose(); this.list.delete(nid); }

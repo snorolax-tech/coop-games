@@ -47,7 +47,13 @@ export class HUD {
     HOTBAR.forEach((it, i) => {
       const c = this.slots[i].querySelector('.slot-count');
       if (it.item) { c.textContent = inv[it.item] ?? 0; this.slots[i].classList.toggle('empty', !(inv[it.item] > 0)); }
-      else c.textContent = '';
+      else if (it.kind === 'partner') {
+        const party = this.game.party || [];
+        const lead = party[0];
+        c.textContent = party.length ? `${party.filter((p) => p.hp > 0).length}/${party.length}` : '';
+        this.slots[i].classList.toggle('empty', !party.some((p) => p.hp > 0));
+        this.slots[i].querySelector('.slot-name').textContent = lead ? `${this.game.creatureName(lead)} Lv ${lead.level}  (Q: next)` : 'Partner';
+      } else c.textContent = '';
     });
     this.$('.coin-count').textContent = inv.coins;
   }

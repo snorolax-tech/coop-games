@@ -5,6 +5,7 @@ import { TYPES, RARITY, PERSONALITIES, CHART, CREATURE_TYPES, COMBOS, effectiven
 import { MOVES } from '../data/moves.js';
 import { ZONES } from '../world/zones.js';
 import { portrait } from '../creatures/portraits.js';
+import { xpToNext } from '../battle/rules.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 
@@ -49,8 +50,7 @@ export class TabPanel {
       body.innerHTML = `<div class="coins-big">🪙 ${inv.coins} coins</div><div class="item-grid">${cells}</div>
         <p class="hint">Sell resources at the Ranch Shop stall. Hover an item for details.</p>`;
     } else if (this.tab === 'party') {
-      body.innerHTML = `<div class="empty-state"><div class="big">🥚</div><h3>No creatures yet</h3>
-        <p>Wild creatures are roaming out there now! Befriending them with Bond Orbs arrives in <b>Stage 3</b>.</p></div>`;
+      this.renderParty(body);
     } else {
       this.renderDex(body);
     }
@@ -82,6 +82,35 @@ export class TabPanel {
       if (!dex.seen.has(b.dataset.sp)) { this.game.audio.play('locked'); return; }
       this.dexSel = b.dataset.sp; this.game.audio.play('ui'); this.render();
     });
+  }
+
+  renderParty(body) {
+    const g = this.game;
+    const party = g.party || [];
+    if (!party.length) {
+      body.innerHTML = `<div class="empty-state"><div class="big">🥚</div><h3>No creatures yet</h3><p>Choose a starter partner to begin!</p></div>`;
+      return;
+    }
+    const ranch = g.isGuest ? (g.ranchCount || 0) : g.ranch.length;
+    body.innerHTML = `<div class="party-list">${party.map((c, i) => {
+      const sp = SPECIES_BY_ID[c.species], t = TYPES[sp.type], p = PERSONALITIES[c.personality];
+      const hp = c.hp / c.stats.hp, col = hp > 0.5 ? '#06d6a0' : hp > 0.2 ? '#ffd166' : '#ef476f';
+      const need = xpToNext(c.level);
+      return `<div class="pcard ${i === 0 ? 'lead' : ''} ${c.hp <= 0 ? 'down' : ''}">
+        <img src="${portrait(c.species, c.shiny)}" alt="">
+        <div class="pinfo">
+          <div class="pname">${g.creatureName(c)}${c.shiny ? ' ✨' : ''} <small>Lv ${c.level}</small> ${i === 0 ? '<span class="lead-tag">LEAD</span>' : ''}</div>
+          <div class="badges"><span class="type-badge" style="background:${t.color}">${t.icon} ${t.name}</span><span class="pers">${p.icon} ${p.name}</span></div>
+          <div class="hpbar"><i style="width:${hp * 100}%;background:${col}"></i></div>
+          <div class="ptext">${c.hp}/${c.stats.hp} HP · ATK ${c.stats.atk} · DEF ${c.stats.def} · SPD ${c.stats.spd}</div>
+          <div class="xpbar"><i style="width:${Math.min(100, (c.xp / need) * 100)}%"></i></div>
+          <div class="ptext">XP ${c.xp}/${need} · ${c.moves.map((m) => MOVES[m].name).join(', ')}</div>
+        </div>
+        ${i > 0 ? `<button class="btn small" data-lead="${i}">Make lead</button>` : ''}
+      </div>`;
+    }).join('')}</div>
+    <p class="hint">Your lead goes out first when you send out your partner (key 6, Q to cycle). Creatures heal slowly over time, and fully when someone rests at the Farmhouse.${ranch ? ` · 🏡 ${ranch} creature(s) waiting at the ranch (pens arrive in Stage 4).` : ''}</p>`;
+    body.querySelectorAll('[data-lead]').forEach((b) => b.onclick = () => { g.setLead(+b.dataset.lead); g.audio.play('ui'); });
   }
 
   _wireDexBack(body) {

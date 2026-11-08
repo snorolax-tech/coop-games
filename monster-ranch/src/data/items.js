@@ -19,6 +19,7 @@ export const HOTBAR = [
   { id: 'brush', name: 'Brush',        icon: '🪮', kind: 'tool' },
   { id: 'can',   name: 'Watering Can', icon: '🚿', kind: 'tool' },
   { id: 'hammer',name: 'Hammer',       icon: '🔨', kind: 'tool' },
+  { id: 'partner', name: 'Partner',    icon: '🐾', kind: 'partner' },
 ];
 
 export function newInventory() {

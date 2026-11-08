@@ -22,6 +22,13 @@ import { HUD } from '../ui/hud.js';
 import { TabPanel, PauseMenu } from '../ui/panels.js';
 import { Chat } from '../ui/chat.js';
 import { ITEMS, newInventory } from '../data/items.js';
+import { BattleManager } from '../battle/battle.js';
+import { BattleView } from '../battle/view.js';
+import { BattleHUD } from '../ui/battle.js';
+import { StarterPicker } from '../ui/starter.js';
+import { Catching } from '../catching/catching.js';
+import { createCreature } from '../creatures/instance.js';
+import { STARTERS } from '../ui/starter.js';
 import { Net } from '../net/network.js';
 import * as Save from '../save/save.js';
 
@@ -58,6 +65,8 @@ export class Game {
     this.audio = new Audio();
     this.net = new Net();
     this.inventory = newInventory();
+    this.party = [];   // my creatures (max 6)
+    this.ranch = [];   // shared ranch storage (host) — creatures that didn't fit in a party
     this.unlocked = new Set(['meadow']);
     this.landmarks = new Set();
     this.guestSaves = {};
@@ -71,6 +80,7 @@ export class Game {
       id: 'local',
       get name() { return game.profile.name; },
       get inventory() { return game.inventory; },
+      get party() { return game.party; },
       give: (item, n, quiet) => this.give(item, n, quiet),
       toast: (msg, kind) => this.toast(msg, kind),
     };
@@ -89,12 +99,18 @@ export class Game {
     this.panel = new TabPanel(uiRoot, this);
     this.pause = new PauseMenu(uiRoot, this);
     this.chat = new Chat(uiRoot, this);
+    this.battles = new BattleManager(this);
+    this.battleView = new BattleView(this);
+    this.battleHUD = new BattleHUD(uiRoot, this);
+    this.catching = new Catching(this);
+    this.starter = new StarterPicker(uiRoot, this);
 
     this._wirePlayer();
     this._wireNet();
     this.input.onLockChange = (locked) => this._onLock(locked);
     canvas.addEventListener('click', () => {
       this.audio.unlock();
+      if (this.starter.open) return;
       if (this.state === 'paused' || (this.state === 'playing' && !this.input.locked)) this.resume();
     });
     addEventListener('beforeunload', () => { if (this.state !== 'menu') { this.save(); this.net.leave(); } });
@@ -108,6 +124,12 @@ export class Game {
 
   get isGuest() { return this.net.role === 'guest'; }
   get isAuthority() { return this.net.role !== 'guest'; }
+  /** My owner id inside battles ('local' = host/solo player, 'guest' = joining player). */
+  get myId() { return this.isGuest ? 'guest' : 'local'; }
+  get myBattle() { return this.battleView.mine(this.myId); }
+  get inBattle() { return !!this.myBattle; }
+
+  creatureName(inst) { return inst.nickname || SPECIES_BY_ID[inst.species].name; }
 
   _wirePlayer() {
     const p = this.player;
@@ -137,9 +159,11 @@ export class Game {
     // ---- host receives from guest ----
     net.on('hello', (m) => {
       const name = String(m.name || 'Friend').slice(0, 14);
-      const inv = { ...newInventory(), ...(this.guestSaves[name] || {}) };
+      let saved = this.guestSaves[name] || {};
+      if (saved.orb !== undefined) saved = { inv: saved, party: [] }; // old save format
+      const inv = { ...newInventory(), ...(saved.inv || {}) };
       const actor = {
-        id: 'guest', name, inventory: inv,
+        id: 'guest', name, inventory: inv, party: saved.party || [],
         give: (item, n, quiet) => { inv[item] = (inv[item] || 0) + n; net.send({ t: 'give', item, n, quiet: !!quiet, inv }); },
         toast: (msg, kind) => net.send({ t: 'toast', msg, kind }),
       };
@@ -148,9 +172,10 @@ export class Game {
       net.send({
         t: 'welcome', host: { name: this.profile.name, color: this.profile.color },
         time: this.world.sky.time, unlocked: [...this.unlocked], landmarks: [...this.landmarks],
-        nodes: this.world.resources.flags(), inv, pr: this.projectiles.snapshot(),
+        nodes: this.world.resources.flags(), inv, party: actor.party, pr: this.projectiles.snapshot(),
         cr: this.creatures.snapshot(), dex: { seen: [...this.dex.seen], caught: [...this.dex.caught] },
       });
+      this.battles.changed();
       this.chat.add('', `🤠 ${name} joined the ranch!`, '', true);
       this.toast(`${name} joined the ranch!`, 'good');
       this.audio.play('chime');
@@ -173,6 +198,11 @@ export class Game {
       this.projectiles.throw(m.k, v3(m.o), v3(m.v), 'guest');
       this.worldSound('throw', v3(m.o));
     });
+    net.on('starter', (m) => { if (this.guestActor && !this.guestActor.party.length) this._giveStarter(this.guestActor, m.id); });
+    net.on('battle', (m) => { if (this.guestActor) this.battles.request(this.guestActor, m.nid); });
+    net.on('bmove', (m) => { if (this.guestActor) this.battles.choose(this.guestActor, m.i); });
+    net.on('brun', () => { if (this.guestActor) this.battles.run(this.guestActor); });
+    net.on('lead', (m) => { if (this.guestActor) this._setLead(this.guestActor, m.i); });
 
     // ---- guest receives from host ----
     net.on('s', (m) => {
@@ -203,6 +233,10 @@ export class Game {
     net.on('fx', (m) => this._playFx(m.k, v3(m.p), m.c));
     net.on('snd', (m) => this._playSound(m.n, v3(m.p), m.k));
     net.on('landmark', (m) => this.landmarks.add(m.id));
+    net.on('party', (m) => { this.party = m.party; this.ranchCount = m.ranch; this._partyUpdated(); });
+    net.on('bstate', (m) => this.battleView.apply(m.list));
+    net.on('bev', (m) => this._onBattleEvent(m.ev));
+    net.on('catch', (m) => this.battleView.playCatch(m.ev));
     net.on('unlock', (m) => { this.unlocked.add(m.id); this.world.setUnlocked(m.id, true); });
 
     // ---- both ----
@@ -214,7 +248,10 @@ export class Game {
     });
 
     net.onPeerLeave = () => {
-      if (this.guestActor) this.guestSaves[this.guestActor.name] = this.guestActor.inventory;
+      if (this.guestActor) {
+        this.battles.run(this.guestActor);
+        this.guestSaves[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party };
+      }
       const name = this.remote?.name || 'Your friend';
       this._removeRemote();
       this.guestActor = null;
@@ -305,6 +342,8 @@ export class Game {
     this.creatures.authority = false;
     this.creatures.applySnapshot(m.cr || []);
     this.dex = { seen: new Set(m.dex?.seen || []), caught: new Set(m.dex?.caught || []) };
+    this.party = m.party || [];
+    this.battleView.clear();
     this.player.teleport(3, 18, 0);
     this.player.zone = 'ranch';
     this._spawnRemote(m.host);
@@ -317,6 +356,131 @@ export class Game {
   actorById(id) {
     if (id === 'guest') return this.guestActor;
     return this.local;
+  }
+
+  // --- party, starters & battles ------------------------------------------------------
+
+  _giveStarter(actor, id) {
+    if (!STARTERS.includes(id)) return;
+    const c = createCreature(id, 5, { personality: 'playful' });
+    actor.party.push(c);
+    actor.toast(`${SPECIES_BY_ID[id].name} is your new partner! Pick 🐾 (key 6), aim at a wild creature and click to battle.`, 'good');
+    this.markCaught(id);
+    this.partyChanged(actor);
+  }
+
+  chooseStarter(id) {
+    if (this.isGuest) this.net.send({ t: 'starter', id });
+    else this._giveStarter(this.local, id);
+    this.items.select(5);
+    this.hud.banner('Partner chosen!', `${SPECIES_BY_ID[id].name} joins you`, TYPES[SPECIES_BY_ID[id].type].color);
+    this.audio.play('chime');
+    this.input.requestLock();
+  }
+
+  /** Host: a newly befriended creature goes to the party, or the ranch if the party is full. */
+  addCreatureTo(actor, inst) {
+    if (actor.party.length < 6) { actor.party.push(inst); this.partyChanged(actor); return 'party'; }
+    this.ranch.push(inst);
+    this.partyChanged(actor);
+    return 'ranch';
+  }
+
+  markCaught(id) {
+    this.markSeen(id, false);
+    if (this.dex.caught.has(id)) return;
+    this.dex.caught.add(id);
+    if (this.net.role === 'host' && this.net.connected) this.net.send({ t: 'dex', caught: [id] });
+    if (this.panel.open) this.panel.render();
+  }
+
+  /** Host: an actor's party changed — refresh my UI or tell the guest. */
+  partyChanged(actor) {
+    if (actor?.id === 'guest') this.net.send({ t: 'party', party: actor.party, ranch: this.ranch.length });
+    else this._partyUpdated();
+  }
+
+  _partyUpdated() {
+    this.hud.refreshCounts();
+    if (this.panel.open) this.panel.render();
+  }
+
+  _setLead(actor, i) {
+    const p = actor.party;
+    if (p.length < 2 || this.battles.battleOf(actor.id)) return;
+    if (i === undefined || i === null) p.push(p.shift());
+    else if (p[i]) p.unshift(p.splice(i, 1)[0]);
+    actor.toast(`${this.creatureName(p[0])} is now your lead partner`, 'good');
+    this.partyChanged(actor);
+  }
+
+  cycleLead() { this.setLead(null); }
+  setLead(i) {
+    if (this.party.length < 2) return;
+    if (this.isGuest) this.net.send({ t: 'lead', i });
+    else this._setLead(this.local, i);
+  }
+
+  requestBattle(def) {
+    const nid = +def.id.slice(3);
+    if (this.isGuest) this.net.send({ t: 'battle', nid });
+    else this.battles.request(this.local, nid);
+  }
+
+  requestMove(i) {
+    if (this.isGuest) this.net.send({ t: 'bmove', i });
+    else this.battles.choose(this.local, i);
+    this.audio.play('ui');
+  }
+
+  requestRun() {
+    if (this.isGuest) this.net.send({ t: 'brun' });
+    else this.battles.run(this.local);
+  }
+
+  /** Host: battle list changed. */
+  battleState(list) {
+    this.battleView.apply(list);
+    if (this.net.connected) this.net.send({ t: 'bstate', list });
+  }
+
+  /** Host: something happened in a battle (animate everywhere). */
+  battleEvent(ev) {
+    this._onBattleEvent(ev);
+    if (this.net.connected) this.net.send({ t: 'bev', ev });
+  }
+
+  _onBattleEvent(ev) {
+    this.battleView.event(ev);
+    const mine = this.myBattle;
+    if (ev.end && mine && mine.id === ev.b) this.hud.banner(ev.text, '', ev.end === 'win' || ev.end === 'caught' ? '#06d6a0' : '#ffd166');
+  }
+
+  catchEvent(ev) {
+    this.battleView.playCatch(ev);
+    if (this.net.connected) this.net.send({ t: 'catch', ev });
+  }
+
+  healAll() {
+    for (const actor of [this.local, this.guestActor]) {
+      if (!actor) continue;
+      for (const c of actor.party) c.hp = c.stats.hp;
+      this.partyChanged(actor);
+    }
+  }
+
+  _regen(dt) {
+    this._regenT = (this._regenT || 0) + dt;
+    if (this._regenT < 4) return;
+    this._regenT = 0;
+    for (const actor of [this.local, this.guestActor]) {
+      if (!actor || this.battles.battleOf(actor.id)) continue;
+      let changed = false;
+      for (const c of actor.party) {
+        if (c.hp < c.stats.hp) { c.hp = Math.min(c.stats.hp, c.hp + Math.max(1, Math.round(c.stats.hp * 0.04))); changed = true; }
+      }
+      if (changed) this.partyChanged(actor);
+    }
   }
 
   knockback(dx, dz, strength) {
@@ -441,6 +605,7 @@ export class Game {
     this.pause.setRole(this.net.role);
     this.input.requestLock();
     this.onStateChange?.(this.state);
+    if (!this.party.length) setTimeout(() => { if (this.state !== 'menu' && !this.party.length) this.starter.show(); }, 1200);
   }
 
   _applySave(d) {
@@ -448,6 +613,10 @@ export class Game {
     this.unlocked = new Set(d?.unlocked || ['meadow']);
     this.landmarks = new Set(d?.landmarks || []);
     this.guestSaves = d?.guests || {};
+    this.party = d?.party || [];
+    this.ranch = d?.ranch || [];
+    this.battles.clear();
+    this.battleView.clear();
     this.dex = { seen: new Set(d?.dex?.seen || []), caught: new Set(d?.dex?.caught || []) };
     this.world.sky.time = d?.time ?? 0.3;
     for (const id of WILD_ZONES) this.world.setUnlocked(id, this.unlocked.has(id));
@@ -460,10 +629,12 @@ export class Game {
 
   serialize() {
     const guests = { ...this.guestSaves };
-    if (this.guestActor) guests[this.guestActor.name] = this.guestActor.inventory;
+    if (this.guestActor) guests[this.guestActor.name] = { inv: this.guestActor.inventory, party: this.guestActor.party };
     return {
       profile: this.profile,
       inventory: this.inventory,
+      party: this.party,
+      ranch: this.ranch,
       guests,
       unlocked: [...this.unlocked],
       landmarks: [...this.landmarks],
@@ -496,10 +667,15 @@ export class Game {
   }
 
   quitToMenu(reason) {
+    if (this.isAuthority) this.battles.clear();
     this.save();
     this.net.leave();
     this._removeRemote();
     this.guestActor = null;
+    this.battleView.clear();
+    this.battleHUD.update(null);
+    this.starter.hide();
+    this.catching.pending = [];
     this.projectiles.clear();
     this.creatures.clear();
     this.creatures.authority = true;
@@ -517,7 +693,7 @@ export class Game {
 
   _onLock(locked) {
     if (locked) { this.pause.show(false); return; }
-    if (this.state === 'playing' && !this.panel.open && !this.chat.open) {
+    if (this.state === 'playing' && !this.panel.open && !this.chat.open && !this.starter.open) {
       this.state = 'paused';
       this.pause.show(true);
     }
@@ -567,7 +743,8 @@ export class Game {
     const t = this.world.sky.time;
     if (t > 0.22 && t < 0.75) { actor.toast("You're not sleepy yet. Come back in the evening.", 'muted'); return; }
     this.world.sky.time = 0.27;
-    this.sharedBanner('Good morning!', `${actor.name} rested — a brand-new day on the ranch`, '#ffd166', 'chime');
+    this.healAll();
+    this.sharedBanner('Good morning!', `${actor.name} rested — everyone's creatures are fully healed`, '#ffd166', 'chime');
     this.save();
   }
 
@@ -630,6 +807,14 @@ export class Game {
     else this.projectiles.update(dt);
     this.remote?.update(dt);
     this.creatures.update(dt);
+    if (this.isAuthority) { this.battles.update(dt); this.catching.update(dt); this._regen(dt); }
+    this.battleView.update(dt);
+    const myBattle = this.myBattle;
+    this.battleHUD.update(myBattle, this.myId);
+    if (myBattle && active) {
+      for (let i = 0; i < 4; i++) if (input.wasPressed('Digit' + (i + 1))) this.requestMove(i);
+      if (input.wasPressed('KeyR')) this.requestRun();
+    }
     this.fx.update(dt);
     this.world.update(dt, this.camera.position);
 
