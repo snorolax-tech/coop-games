@@ -73,7 +73,7 @@ export function pickWildMove(b, target) {
   return best;
 }
 
-export function xpToNext(level) { return 30 + level * level * 3; }
+export function xpToNext(level) { return 20 + level * level * 2; }
 
 export function xpReward(foeInst) {
   const sp = SPECIES_BY_ID[foeInst.species];
