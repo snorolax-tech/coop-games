@@ -200,19 +200,15 @@ class Battle {
         this.say(`The wild ${name} fainted and wanders off dazed.`);
         this.mgr.emit({ b: this.id, faint: b.key, text: `The wild ${name} fainted!` });
       }
+      // the whole party of every rancher in the fight earns XP (the fighter gets the most)
       const xp = xpReward(b.inst);
       for (const a of this.allies) {
-        if (a.inst.hp <= 0) continue;
-        const lv = grantXp(a.inst, xp);
         a.inst.happiness = Math.min(100, (a.inst.happiness ?? 70) + 2);
-        if (lv) this.game.queueEvolution(a.inst, a.actor);
-        a.actor.toast(`${nameOf(a.inst)} gained ${xp} XP!`, 'good');
-        if (lv) {
+        const ups = this.game.awardPartyXp(a.actor, xp, a.inst, `${nameOf(b.inst)} defeated!`);
+        if (ups.includes(a.inst)) {
           this.say(`${nameOf(a.inst)} grew to Lv ${a.inst.level}!`);
-          a.actor.toast(`⬆ ${nameOf(a.inst)} grew to Lv ${a.inst.level}!`, 'good');
           this.game.worldFx('sparkle', a.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xffe066);
         }
-        this.mgr.partyChanged(a.actor);
       }
       this.foes = this.foes.filter((f) => f !== b);
       if (b.wild.guardian) this.game.guardianCalmed(b.wild, [...new Set(this.allies.map((a) => a.actor))]);

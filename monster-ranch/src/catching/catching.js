@@ -4,7 +4,7 @@
 // creatures only bond through teamwork.
 import * as THREE from 'three';
 import { SPECIES_BY_ID } from '../data/creatures.js';
-import { catchChance, needsTeamwork } from '../battle/rules.js';
+import { catchChance, needsTeamwork, xpReward } from '../battle/rules.js';
 
 export class Catching {
   constructor(game) {
@@ -68,6 +68,9 @@ export class Catching {
     if (ok) {
       const inst = c.inst;
       inst.hp = Math.max(inst.hp, Math.ceil(inst.stats.hp * 0.3));
+      // befriending is worth XP for the whole team (before the new friend joins)
+      const fighter = battle ? battle.allies.find((a) => a.owner === actor.id)?.inst : null;
+      g.awardPartyXp(actor, xpReward(inst), fighter, `${c.sp.name} befriended!`);
       const where = g.addCreatureTo(actor, inst);
       g.markCaught(inst.species);
       g.sharedBanner(`${actor.name} befriended ${SPECIES_BY_ID[inst.species].name}!`,

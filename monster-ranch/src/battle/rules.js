@@ -77,7 +77,8 @@ export function xpToNext(level) { return 20 + level * level * 2; }
 
 export function xpReward(foeInst) {
   const sp = SPECIES_BY_ID[foeInst.species];
-  return Math.max(5, Math.floor((foeInst.level * RARITY_XP[sp.rarity]) / 7));
+  // (×1.5 compared to the original tuning — levelling felt too slow)
+  return Math.max(8, Math.floor((foeInst.level * RARITY_XP[sp.rarity] * 1.5) / 7));
 }
 
 /** Give XP; returns the number of levels gained. Recalculates stats, keeping damage taken. */

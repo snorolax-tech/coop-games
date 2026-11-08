@@ -28,6 +28,7 @@ import { BattleHUD } from '../ui/battle.js';
 import { StarterPicker } from '../ui/starter.js';
 import { Catching } from '../catching/catching.js';
 import { createCreature, calcStats } from '../creatures/instance.js';
+import { grantXp } from '../battle/rules.js';
 import { STARTERS } from '../ui/starter.js';
 import { ratingPoints, ratingInfo } from './rating.js';
 import { Buildings } from '../ranch/buildings.js';
@@ -923,6 +924,44 @@ export class Game {
     this.input.requestLock();
   }
 
+  /**
+   * Host: give XP to an actor's whole party. The creature that fought (or the lead) gets the
+   * full amount, everyone else gets 75%. Returns the list of level-ups.
+   */
+  awardPartyXp(actor, amount, fighter = null, reason = '') {
+    if (!actor?.party?.length || amount <= 0) return [];
+    const ups = [];
+    const lead = fighter || actor.party[0];
+    for (const c of actor.party) {
+      const xp = Math.max(1, Math.round(c === lead ? amount : amount * 0.75));
+      const lv = grantXp(c, xp);
+      if (lv) {
+        ups.push(c);
+        actor.toast(`⬆ ${this.creatureName(c)} grew to Lv ${c.level}!`, 'good');
+        this.queueEvolution(c, actor);
+      }
+    }
+    if (reason) actor.toast(`${reason} Team +${Math.round(amount * 0.75)}–${amount} XP`, 'good');
+    this.partyChanged(actor);
+    return ups;
+  }
+
+  /** Host: your walking partner slowly gains XP while it's out with you. */
+  _companionXp(dt) {
+    this._compXpT = (this._compXpT || 0) + dt;
+    if (this._compXpT < 20) return;
+    this._compXpT = 0;
+    const give = (actor, out) => {
+      const c = actor?.party?.[0];
+      if (!c || !out || this.battles.battleOf(actor.id)) return;
+      const lv = grantXp(c, 3 + Math.ceil(c.level / 3));
+      if (lv) { actor.toast(`⬆ ${this.creatureName(c)} grew to Lv ${c.level} walking with you!`, 'good'); this.queueEvolution(c, actor); }
+      this.partyChanged(actor);
+    };
+    give(this.local, this.companion.visible);
+    give(this.guestActor, this.friendComp.visible);
+  }
+
   /** Host: a newly befriended creature goes to the party, or the ranch if the party is full. */
   addCreatureTo(actor, inst) {
     let where = 'ranch';
@@ -1443,7 +1482,7 @@ export class Game {
     else this.projectiles.update(dt);
     this.remote?.update(dt);
     this.creatures.update(dt);
-    if (this.isAuthority) { this.battles.update(dt); this.catching.update(dt); this._regen(dt); }
+    if (this.isAuthority) { this.battles.update(dt); this.catching.update(dt); this._regen(dt); this._companionXp(dt); }
     this.battleView.update(dt);
     const myBattle = this.myBattle;
     // partner walking with you (hidden while it's out battling)
