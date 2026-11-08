@@ -286,3 +286,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1033; fon
 .bmove.bcatch small { opacity: .7; }
 .bmove:disabled { opacity: .45; cursor: not-allowed; }
 .click-hint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); background: rgba(43,45,66,.88); border: 2px solid #ffd166; padding: 8px 16px; border-radius: 999px; font-weight: 800; animation: toastIn .2s ease-out; }
+
+/* ---------- creative building ---------- */
+.build-cats { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.build-cat { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.1); }
+.build-cat.sel { background: #ffd166; color: #2b2d42; }
+.build-list { grid-template-columns: repeat(9, 1fr) !important; }
+.build-status { display: flex; gap: 14px; align-items: center; font-size: 12.5px; font-weight: 700; margin-top: 8px; flex-wrap: wrap; }
+.build-desc { opacity: .75; font-weight: 600; }
+.swatch-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; vertical-align: middle; }
+.sign-edit { position: fixed; left: 50%; top: 35%; transform: translateX(-50%); background: #fff7e6; color: #2b2d42; border: 4px solid #2b2d42; border-radius: 18px; padding: 14px 18px; box-shadow: 0 8px 0 #2b2d42; pointer-events: auto; text-align: center; }
+.sign-title { font-weight: 900; font-size: 18px; margin-bottom: 8px; }
+.sign-edit input { font: inherit; font-size: 20px; font-weight: 800; padding: 8px 12px; border-radius: 12px; border: 3px solid #2b2d42; width: 320px; text-align: center; }

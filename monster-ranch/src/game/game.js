@@ -239,8 +239,9 @@ export class Game {
       const def = this.interactions.byId.get(m.id);
       if (def?.use && this.guestActor && this._guestNear(def)) def.use(this.guestActor, m.mode);
     });
-    net.on('build', (m) => { if (this.guestActor) this.buildings.place(this.guestActor, m.type, m.x, m.z, m.rot); });
-    net.on('demolish', (m) => { if (this.guestActor) this.buildings.demolish(this.guestActor, m.id); });
+    net.on('build', (m) => { if (this.guestActor) this.buildings.place(this.guestActor, m.type, m.x, m.z, m.rot, m.color || null); });
+    net.on('demolish', (m) => { if (this.guestActor) this.buildings.demolish(this.guestActor, m.id, !!m.full); });
+    net.on('sign', (m) => { if (this.guestActor) this.buildings.setText(this.guestActor, m.id, m.text); });
     net.on('rmove', (m) => { if (this.guestActor) this._ranchMove(this.guestActor, m.uid, m.act); });
     net.on('shop', (m) => { if (this.guestActor) this._shop(this.guestActor, m.op, m.id, m.n); });
     net.on('petc', () => { if (this.guestActor) this._petLead(this.guestActor); });
@@ -551,14 +552,51 @@ export class Game {
     else this._ranchMove(this.local, uid, act);
   }
 
-  requestBuild(type, x, z, rot) {
-    if (this.isGuest) this.net.send({ t: 'build', type, x, z, rot });
-    else this.buildings.place(this.local, type, x, z, rot);
+  requestBuild(type, x, z, rot, color = null) {
+    if (this.isGuest) this.net.send({ t: 'build', type, x, z, rot, color });
+    else this.buildings.place(this.local, type, x, z, rot, color);
   }
 
-  requestDemolish(id) {
-    if (this.isGuest) this.net.send({ t: 'demolish', id });
-    else this.buildings.demolish(this.local, id);
+  requestDemolish(id, full = false) {
+    if (this.isGuest) this.net.send({ t: 'demolish', id, full });
+    else this.buildings.demolish(this.local, id, full);
+  }
+
+  /** Open the little text box to write on a signpost. */
+  editSign(id, current) {
+    if (!this._signEl) {
+      const el = document.createElement('div');
+      el.className = 'sign-edit hidden';
+      el.innerHTML = '<div class="sign-title">🪧 What should the sign say?</div><input maxlength="28"><div class="hint">Enter to save · Esc to cancel</div>';
+      this.uiRoot.appendChild(el);
+      const input = el.querySelector('input');
+      input.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { this._closeSign(true); ev.preventDefault(); }
+        else if (ev.key === 'Escape') { this._closeSign(false); ev.preventDefault(); }
+      });
+      this._signEl = el;
+    }
+    this._signId = id;
+    const input = this._signEl.querySelector('input');
+    input.value = current || '';
+    this._signEl.classList.remove('hidden');
+    this.input.typing = true;
+    this.input.keys.clear();
+    this.input.exitLock();
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+  }
+
+  _closeSign(save) {
+    const el = this._signEl;
+    el.classList.add('hidden');
+    this.input.typing = false;
+    if (save) {
+      const text = el.querySelector('input').value.trim();
+      if (this.isGuest) this.net.send({ t: 'sign', id: this._signId, text });
+      else this.buildings.setText(this.local, this._signId, text);
+    }
+    this.input.requestLock();
   }
 
   // --- companion (partner walking with you) & friendly battles --------------------------------
@@ -1262,7 +1300,8 @@ export class Game {
   }
 
   get menuOpen() {
-    return this.panel.open || this.chat.open || this.starter.open || this.barn.open || this.shopOpen || this.duelPrompt.open || this.state !== 'playing';
+    return this.panel.open || this.chat.open || this.starter.open || this.barn.open || this.shopOpen || this.duelPrompt.open
+      || (this._signEl && !this._signEl.classList.contains('hidden')) || this.state !== 'playing';
   }
 
   _onLock(locked, expected) {

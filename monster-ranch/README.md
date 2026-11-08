@@ -29,7 +29,7 @@ Open http://localhost:5174. Click **New Ranch**, then click the game to capture 
 | Q | Cycle which partner leads |
 | F (or 6 + click on nothing) | Send your lead partner out to walk with you / call it back. E on it to pet it |
 | 6 + click on your friend | Challenge them to a friendly battle (Y/N to accept). Everyone is healed afterwards |
-| B (on the ranch) | Build mode: 1–0/wheel choose, R rotate, click place, X demolish |
+| B (on the ranch) | Build mode: Z/C category, 1–9/wheel piece, R rotate (Shift+R fine), P paint, G grid, click place, T copy, V move, X demolish |
 | Tap E / hold E on a ranch creature | Feed (treat if held, else berries) / pet |
 | In battle | On your turn the mouse is freed: **click a move** (or press 1–4) or **Run** (R), or **Throw Bond Orb** (C) to try to befriend the wild creature |
 | M | World map (zones, landmarks, guardians, you and your friend) - a minimap is always shown top-right |
