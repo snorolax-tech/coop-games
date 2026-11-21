@@ -8,7 +8,7 @@ import { ZombieModel, ZTYPES } from './zombies.js';
 import { FX } from './fx.js';
 import { UI } from './ui.js';
 import { analyze, itemMesh, makeItem, combine, MAX_PARTS } from './items.js';
-import { sfx, unlockAudio } from './audio.js';
+import { sfx, sfx3d, unlockAudio } from './audio.js';
 
 // eslint-disable-next-line no-undef
 export const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev';
@@ -169,6 +169,18 @@ export class Game {
     n.onDisconnect = (r) => this.leave(r);
   }
 
+  /** world-positioned sound */
+  s3(name, x, z, throttle = 0, range = 60) { const P = this.player; if (P) sfx3d(name, x, z, P.pos.x, P.pos.z, P.yaw, throttle, range); }
+
+  scare(force) {
+    const now = performance.now();
+    if (!force && now - (this._lastScare || 0) < 6000) return;
+    this._lastScare = now;
+    this.ui.jumpScare();
+    sfx('scare');
+    this.player.hurtT = 0.6;
+  }
+
   // ------------------------------------------------------------ events
   onEvent(e) {
     const me = this.me, P = this.player;
@@ -183,12 +195,33 @@ export class Game {
             else { this._drop(it, P.pos.x, P.pos.z); this.toast('Inventory full: dropped ' + analyze(it.parts).name, '#f99'); }
           }
           if (got.length) this.toast('Found: ' + got.join(', '), '#ffe066');
+          else if (!e.lurker) this.toast('Nothing useful in there…', '#aaa');
         }
         break;
       case 'take':
         if (e.p === me) { if (!P.addItem(e.item)) { this._drop(e.item, P.pos.x, P.pos.z); this.toast('Inventory full', '#f99'); } else sfx('loot'); }
         break;
-      case 'hurt': if (e.p === me) P.hurt(e.dmg); break;
+      case 'hurt': if (e.p === me) P.hurt(e.dmg, e.kb); break;
+      case 'scare': if (e.p === me) this.scare(e.kind === 'lurker'); else this.s3('shriek', e.x, e.z); break;
+      case 'shriek': this.s3('shriek', e.x, e.z, 250); break;
+      case 'blackout':
+        if (e.on) { sfx('blackout'); this.toast('⚡ The power just went out…', '#ff6a4a'); }
+        else { sfx('power'); this.toast('💡 Power is back', '#ffe066'); }
+        break;
+      case 'boss':
+        sfx('bossintro');
+        this.toast(`☠ ${e.name} HAS ARRIVED ☠`, '#ff3030');
+        P.hurtT = Math.max(P.hurtT, 0.5);
+        break;
+      case 'roar': this.s3('roar', e.x, e.z, 0, 90); break;
+      case 'charge': this.s3('charge', e.x, e.z, 0, 70); break;
+      case 'spit':
+        this.s3('spit', e.a[0], e.a[1]);
+        for (let i = 0; i < 12; i++) this.fx.gas(_v.set(e.a[0] + (e.b[0] - e.a[0]) * i / 12, 2.5 + Math.sin(i / 12 * Math.PI) * 3, e.a[1] + (e.b[1] - e.a[1]) * i / 12));
+        break;
+      case 'blink': this.s3('blink', e.x, e.z); if (e.p === me) this.s3('whisper', e.x, e.z); break;
+      case 'scream': this.s3('scream', e.x, e.z, 0, 90); break;
+      case 'stun': if (e.p === me) { P.stunT = e.t; P.hurtT = 0.4; } break;
       case 'boom':
         sfx(e.big ? 'boom' : 'throw');
         if (e.big) this.fx.explosion(_v.set(e.x, 1, e.z), Math.min(2, e.r / 3));
@@ -199,7 +232,7 @@ export class Game {
       case 'zdie': sfx('zdie', 60); this.fx.blood(_v.set(e.x, 1.2, e.z), 14); { const m = this.zModels.get(e.id); if (m) m.dead = 0.01; } break;
       case 'zap': sfx('zap', 80); this.fx.zap(_v.set(e.a[0], 1.3, e.a[1]), _w.set(e.b[0], 1.3, e.b[1])); break;
       case 'night': sfx('night'); this.toast(`🌙 Night ${e.day} — they're coming!`, '#ff8080'); break;
-      case 'dawn': if (e.day > 1) { sfx('dawn'); this.toast(`☀ You survived the night! Day ${e.day}`, '#ffe066'); this.toast('Some containers have been restocked', '#ccc'); } break;
+      case 'dawn': if (e.day > 1) { sfx('dawn'); this.toast(`☀ You survived the night! Day ${e.day}`, '#ffe066'); this.toast('A few containers have been restocked', '#ccc'); } break;
       case 'place': sfx('build'); break;
       case 'break': sfx('break'); this.fx.sparks(_v.set(e.x, 0.8, e.z), 16, 0xccaa77); break;
       case 'whit': sfx('hit', 150); this.fx.sparks(_v.set(e.x, 1, e.z), 4, 0xccaa77); break;
@@ -256,7 +289,9 @@ export class Game {
     let night = 0;
     if (s) night = s.ph === 'night' || s.ph === 'over' ? 1 : s.t < 12 ? (12 - s.t) / 12 * 0.85 : 0;
     this._night = (this._night ?? night) + (night - (this._night ?? night)) * Math.min(1, dt * 1.5);
-    this.town.setNight(this._night, P.pos);
+    const dusk = s && s.ph === 'day' && s.t < 30 ? (30 - s.t) / 30 : 0;
+    this.town.setNight(this._night, P.pos, dusk, !!s?.blackout, this.t);
+    if (s) this._ambience(dt, s);
 
     // player
     const walls = (s?.st || []).filter((q) => q.form === 'wall').map(wallBox);
@@ -297,6 +332,40 @@ export class Game {
     this.ui.update(this);
     this.renderer.render(this.scene, this.camera);
     this.pressed.clear(); this.mouse.pressed = false;
+  }
+
+  _ambience(dt, s) {
+    const P = this.player;
+    // countdown to night: siren at 30s, ticks for the last 10
+    if (s.ph === 'day') {
+      const prev = this._prevT ?? s.t;
+      if (prev > 30 && s.t <= 30) { sfx('siren'); this.toast('⚠ Night is coming — get ready!', '#ff8a4a'); }
+      if (s.t <= 10 && Math.ceil(prev) !== Math.ceil(s.t) && s.t > 0) sfx('tick10');
+      this._prevT = s.t;
+    } else this._prevT = null;
+    if (s.ph !== 'night' && !s.z.length) return;
+    // heartbeat when something is close
+    let near = 1e9;
+    for (const m of this.zModels.values()) if (!m.dead) near = Math.min(near, Math.hypot(m.x - P.pos.x, m.z - P.pos.z));
+    this._hb = (this._hb ?? 0) - dt;
+    if (near < 13 && this._hb <= 0 && !P.down) { sfx('heartbeat'); this._hb = 0.35 + near / 13 * 0.9; }
+    // creepy noises out in the dark
+    if (s.ph === 'night') {
+      this._amb = (this._amb ?? 10) - dt;
+      if (this._amb <= 0) {
+        this._amb = 9 + Math.random() * 18;
+        const a = Math.random() * Math.PI * 2, d = 25 + Math.random() * 25;
+        this.s3(Math.random() < 0.55 ? 'distant' : 'whisper', P.pos.x + Math.cos(a) * d, P.pos.z + Math.sin(a) * d, 0, 70);
+      }
+    }
+    // turning around to find a stalker right behind you
+    this._scared ||= new Set();
+    for (const m of this.zModels.values()) {
+      if (m.type !== 'stalker' || m.dead || this._scared.has(m.id)) continue;
+      const dx = m.x - P.pos.x, dz = m.z - P.pos.z, d = Math.hypot(dx, dz);
+      if (d > 4.5) continue;
+      if ((dx * -Math.sin(P.yaw) + dz * -Math.cos(P.yaw)) / d > 0.8) { this._scared.add(m.id); this.scare(); }
+    }
   }
 
   _interact(s, canAct, dt) {
@@ -346,7 +415,7 @@ export class Game {
       if (f & 16) m.flashT = 0.1;
       m.update(dt, { x, z, yaw, f }, this.t);
       if (f & 1 && Math.random() < dt * 6) this.fx.fire(_v.set(m.x, 1.5, m.z));
-      if (Math.random() < dt * 0.05) sfx('groan', 400);
+      if (Math.random() < dt * 0.08) this.s3('groan', m.x, m.z, 300, 35);
     }
     for (const [id, m] of this.zModels) {
       if (!seen.has(id) && !m.dead) m.dead = 0.01;

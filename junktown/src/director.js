@@ -2,12 +2,42 @@
 // placed structures (barricades, traps, magnets, mines), fire/gas zones, explosions.
 import { analyze } from './items.js';
 import { ZTYPES } from './zombies.js';
-import { LAYOUT, rollLoot, collide, SPAWN_R, MAP } from './town.js';
+import { LAYOUT, rollLoot, collide, SPAWN_R, MAP, COLLIDERS } from './town.js';
 
 export const DAY_LEN = 120;
 export const FIRST_DAY_LEN = 150;
 const MAX_ALIVE = 45;
 const ZT = Object.keys(ZTYPES);
+const BOSSES = ['butcher', 'mother', 'hollow'];
+
+/** does a line of sight between two points cross a building? (2D slab test) */
+function blocked(x1, z1, x2, z2) {
+  const dx = x2 - x1, dz = z2 - z1;
+  for (const c of COLLIDERS) {
+    let t0 = 0, t1 = 1;
+    for (const [p, d, mn, mx] of [[x1, dx, c.minX, c.maxX], [z1, dz, c.minZ, c.maxZ]]) {
+      if (Math.abs(d) < 1e-9) { if (p < mn || p > mx) { t0 = 2; break; } continue; }
+      let a = (mn - p) / d, b = (mx - p) / d;
+      if (a > b) [a, b] = [b, a];
+      t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+      if (t0 > t1) break;
+    }
+    if (t0 <= t1 && t0 < 1) return true;
+  }
+  return false;
+}
+/** is any standing player looking at this zombie? */
+function seenBy(z, players) {
+  for (const p of players) {
+    if (!p || p.down) continue;
+    const dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz);
+    if (d > 45) continue;
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    if ((dx * fx + dz * fz) / (d || 1) < 0.72) continue;
+    if (!blocked(p.x, p.z, z.x, z.z)) return true;
+  }
+  return false;
+}
 
 export function wallBox(s) {
   // walls are axis aligned (rot snapped to 90deg): long side along x when rot=0
@@ -34,7 +64,9 @@ export class Director {
     this.state = {
       ph: 'day', day: 1, t: FIRST_DAY_LEN, left: 0, kills: 0,
       looted: [], ground: [], st: [], zones: [], z: [], skip: [false, false], restart: [false, false],
+      blackout: false, boss: null,
     };
+    this.blackoutAt = -1; this.blackoutT = 0; this.bossPending = null; this.acidT = 0; this.nightT = 0;
     this.emit({ k: 'dawn', day: 1 });
   }
 
@@ -45,7 +77,16 @@ export class Director {
     const c = LAYOUT.C[cid];
     if (!c || this.looted.has(cid)) return;
     this.looted.add(cid);
-    this.emit({ k: 'loot', p, cid, items: rollLoot(c.type) });
+    const day = this.state.day;
+    if (c.type !== 'stash' && Math.random() < Math.min(0.2, 0.05 + day * 0.025)) {
+      // SURPRISE: something was hiding in there
+      const z = this._spawnAt('lurker', c.x, c.z);
+      z.atk = 0.6;
+      this.emit({ k: 'scare', p, x: c.x, z: c.z, kind: 'lurker' });
+      this.emit({ k: 'loot', p, cid, items: [] , lurker: true });
+      return;
+    }
+    this.emit({ k: 'loot', p, cid, items: rollLoot(c.type, day) });
   }
 
   drop(item, x, z) {
@@ -171,25 +212,34 @@ export class Director {
     this.state.kills++;
     this.emit({ k: 'zdie', id: z.id, x: z.x, z: z.z, type: z.type });
     if (z.T.boom) this.boom(z.x, z.z, { radius: z.T.boom.radius, dmg: z.T.boom.dmg, P: { explosive: 2 }, fx: { fire: 3 } }, 1, players);
-    if (Math.random() < 0.12) {
+    if (Math.random() < 0.08) {
       const pool = ['nails', 'tape', 'battery', 'scrap', 'bottle', 'bandage', 'lighter', 'spring', 'wire', 'brick'];
       this.drop({ uid: Math.floor(Math.random() * 1e9), parts: [pool[Math.floor(Math.random() * pool.length)]], uses: null }, z.x, z.z);
     }
   }
 
-  _spawnOne() {
+  _spawnOne(type) {
     const day = this.state.day;
-    const r = Math.random();
-    let type = 'walker';
-    if (day >= 4 && r < 0.12) type = 'exploder';
-    else if (day >= 3 && r < 0.24) type = 'brute';
-    else if (day >= 2 && r < 0.5) type = 'runner';
-    const T = ZTYPES[type];
+    if (!type) {
+      const r = Math.random();
+      type = 'walker';
+      if (day >= 4 && r < 0.12) type = 'exploder';
+      else if (day >= 3 && r < 0.24) type = 'brute';
+      else if (day >= 2 && r < 0.5) type = 'runner';
+    }
     const a = Math.random() * Math.PI * 2;
-    const hpMult = 1 + (day - 1) * 0.12;
-    this.zombies.push({ id: this.nextId++, type, ti: ZT.indexOf(type), T, x: Math.cos(a) * SPAWN_R, z: Math.sin(a) * SPAWN_R, yaw: 0,
+    return this._spawnAt(type, Math.cos(a) * SPAWN_R, Math.sin(a) * SPAWN_R);
+  }
+
+  _spawnAt(type, x, z) {
+    const T = ZTYPES[type];
+    const hpMult = 1 + (this.state.day - 1) * 0.15;
+    const q = { id: this.nextId++, type, ti: ZT.indexOf(type), T, x, z, yaw: 0,
       hp: T.hp * hpMult, max: T.hp * hpMult, kx: 0, kz: 0, burn: 0, stun: 0, poison: 0, bleed: 0, slow: 0, atk: 0, attacking: false, flash: false,
-      wander: a + Math.PI });
+      shrieked: false, frozen: false, ab: 4 + Math.random() * 3, ab2: 6, mode: 'chase', modeT: 0, cx: 0, cz: 0 };
+    if (T.boss) q.ab = 5;
+    this.zombies.push(q);
+    return q;
   }
 
   // ------------------------------------------------------------ tick
@@ -210,23 +260,43 @@ export class Director {
       if (s.t <= 0) {
         s.ph = 'night';
         s.skip = [false, false];
-        this.toSpawn = 8 + (s.day - 1) * 6;
-        s.left = this.toSpawn;
+        this.toSpawn = 10 + (s.day - 1) * 7;
+        this.stalkers = s.day >= 2 ? 1 + Math.floor((s.day - 2) / 2) : 0;
+        this.bossPending = s.day % 3 === 0 ? BOSSES[(s.day / 3 - 1) % BOSSES.length] : null;
+        this.bossAt = Math.floor(this.toSpawn / 2);
+        s.left = this.toSpawn + this.stalkers + (this.bossPending ? 1 : 0);
         this.spawnT = 2;
+        this.nightT = 0;
+        this.blackoutAt = s.day >= 2 && Math.random() < 0.75 ? 15 + Math.random() * 35 : -1;
         this.emit({ k: 'night', day: s.day });
       }
     } else if (s.ph === 'night') {
       this.spawnT -= dt;
+      this.nightT += dt;
       if (this.toSpawn > 0 && this.spawnT <= 0 && this.zombies.length < MAX_ALIVE) {
         const batch = Math.min(this.toSpawn, 2 + Math.floor(s.day / 2));
         for (let i = 0; i < batch; i++) this._spawnOne();
         this.toSpawn -= batch;
         this.spawnT = 2.2;
+        if (this.stalkers > 0 && Math.random() < 0.35) { this._spawnOne('stalker'); this.stalkers--; }
       }
-      s.left = this.toSpawn + this.zombies.length;
+      if (this.toSpawn === 0 && this.stalkers > 0) { this._spawnOne('stalker'); this.stalkers--; }
+      if (this.bossPending && this.toSpawn <= this.bossAt) {
+        const b = this._spawnOne(this.bossPending);
+        this.emit({ k: 'boss', type: this.bossPending, name: b.T.boss });
+        this.bossPending = null;
+      }
+      // blackouts
+      if (this.blackoutAt > 0 && this.nightT >= this.blackoutAt) { this.blackoutAt = -1; this.blackoutT = 16 + Math.random() * 8; this.emit({ k: 'blackout', on: true }); }
+      const hollow = this.zombies.some((q) => q.type === 'hollow');
+      if (this.blackoutT > 0) { this.blackoutT -= dt; if (this.blackoutT <= 0 && !hollow) this.emit({ k: 'blackout', on: false }); }
+      const bo = this.blackoutT > 0 || hollow;
+      if (bo !== s.blackout) s.blackout = bo;
+      s.left = this.toSpawn + this.zombies.length + this.stalkers + (this.bossPending ? 1 : 0);
       if (s.left === 0) {
+        s.blackout = false; this.blackoutT = 0;
         s.ph = 'day'; s.day++; s.t = DAY_LEN;
-        for (const id of [...this.looted]) if (Math.random() < 0.6) this.looted.delete(id);
+        for (const id of [...this.looted]) if (Math.random() < 0.35) this.looted.delete(id);
         s.zones = s.zones.filter((zn) => zn.kind !== 'lure');
         this.emit({ k: 'dawn', day: s.day });
       }
@@ -242,6 +312,16 @@ export class Director {
     // zones
     for (const zn of s.zones) zn.t -= dt;
     s.zones = s.zones.filter((zn) => zn.t > 0);
+    this.acidT -= dt;
+    if (this.acidT <= 0) {
+      this.acidT = 0.5;
+      players.forEach((p, i) => { if (p && !p.down) for (const zn of s.zones) if (zn.kind === 'acid' && Math.hypot(zn.x - p.x, zn.z - p.z) < zn.r) { this.emit({ k: 'hurt', p: i, dmg: 5, x: zn.x, z: zn.z, acid: true }); break; } });
+    }
+    for (const a of this.spits || []) a.t -= dt;
+    if (this.spits) {
+      for (const a of this.spits.filter((q) => q.t <= 0)) this._zone('acid', a.x, a.z, 3.2, 7);
+      this.spits = this.spits.filter((q) => q.t > 0);
+    }
 
     this._zombies(dt, players);
     this._structures(dt, players);
@@ -272,18 +352,25 @@ export class Director {
         players.forEach((p, i) => { if (!p || p.down) return; const d = Math.hypot(p.x - z.x, p.z - z.z); if (d < best) { best = d; tp = i; } });
         if (tp >= 0) { tx = players[tp].x; tz = players[tp].z; } else { tx = 0; tz = 0; }
       }
-      const dx = tx - z.x, dz = tz - z.z, d = Math.hypot(dx, dz) || 1;
-      z.yaw = Math.atan2(dx, dz);
-      z.attacking = false;
+      let dx = tx - z.x, dz = tz - z.z, d = Math.hypot(dx, dz) || 1;
+      z.attacking = false; z.charging = false;
       let speed = z.T.speed * (z.slow > 0 ? 0.45 : 1) * (lure?.magnet ? 1.6 : 1);
+      // runners shriek when they first spot you
+      if (z.type === 'runner' && !z.shrieked && tp >= 0 && d < 24) { z.shrieked = true; this.emit({ k: 'shriek', x: z.x, z: z.z }); }
+      // stalkers freeze while watched
+      if (z.T.stalker) { z.frozen = seenBy(z, players); if (z.frozen) speed = 0; }
+      if (z.T.boss) { const r = this._boss(z, dt, players, tp, d); if (r === 'dead') continue; if (r) { dx = r.dx; dz = r.dz; d = 1; speed = r.speed; } }
+      if (speed > 0 || z.mode !== 'charge') z.yaw = Math.atan2(dx, dz);
       if (z.stun > 0) speed = 0;
-      if (tp >= 0 && d < z.T.reach + 0.4) {
+      if (tp >= 0 && d < z.T.reach + 0.4 && z.mode !== 'charge' && !(z.T.stalker && z.frozen)) {
         speed = 0;
         z.attacking = true;
         if (z.atk <= 0 && z.stun <= 0) {
-          z.atk = 1.1;
+          z.atk = z.T.boss ? 1.4 : 1.1;
           if (z.T.boom) { z.hp = 0; this._kill(z, players); players.forEach((p, i) => { if (p && !p.down && Math.hypot(p.x - z.x, p.z - z.z) < z.T.boom.radius) this.emit({ k: 'hurt', p: i, dmg: z.T.boom.dmg, x: z.x, z: z.z }); }); continue; }
-          this.emit({ k: 'hurt', p: tp, dmg: z.T.dmg, x: z.x, z: z.z });
+          const kb = z.T.boss ? [dx / d * 9, dz / d * 9] : null;
+          this.emit({ k: 'hurt', p: tp, dmg: z.T.dmg, x: z.x, z: z.z, kb });
+          if (z.T.stalker) this.emit({ k: 'scare', p: tp, x: z.x, z: z.z, kind: 'stalker' });
         }
       }
       z.x += (dx / d * speed + z.kx) * dt;
@@ -300,6 +387,7 @@ export class Director {
       for (const w of walls) {
         const b = wallBox(w);
         if (collide(z, 0.45 * z.T.scale, [b])) {
+          if (z.mode === 'charge') { w.hp = 0; this.emit({ k: 'whit', id: w.id, x: z.x, z: z.z }); continue; }
           z.attacking = true;
           if (z.atk <= 0 && z.stun <= 0) {
             z.atk = 1.1;
@@ -339,11 +427,66 @@ export class Director {
     s.st = s.st.filter((w) => { if (w.hp <= 0) { if (w.form !== 'mine') this.emit({ k: 'break', x: w.x, z: w.z, form: w.form }); return false; } return true; });
   }
 
+  /** boss special moves. returns a movement override {dx,dz,speed}, 'dead', or null */
+  _boss(z, dt, players, tp, d) {
+    z.ab -= dt; z.ab2 -= dt; z.modeT -= dt;
+    const target = tp >= 0 ? players[tp] : null;
+    if (z.type === 'butcher') {
+      if (z.mode === 'windup') {
+        if (z.modeT <= 0) { z.mode = 'charge'; z.modeT = 1.5; this.emit({ k: 'charge', x: z.x, z: z.z }); }
+        return { dx: z.cx, dz: z.cz, speed: 0 };
+      }
+      if (z.mode === 'charge') {
+        if (z.modeT <= 0) { z.mode = 'chase'; z.ab = 6 + Math.random() * 3; return null; }
+        players.forEach((p, i) => {
+          if (!p || p.down || z.hitP?.[i]) return;
+          if (Math.hypot(p.x - z.x, p.z - z.z) < 2.8) { (z.hitP ||= {})[i] = true; this.emit({ k: 'hurt', p: i, dmg: 38, x: z.x, z: z.z, kb: [z.cx * 22, z.cz * 22] }); }
+        });
+        return { dx: z.cx, dz: z.cz, speed: 16 };
+      }
+      if (z.ab <= 0 && target && d > 4 && d < 30) {
+        z.mode = 'windup'; z.modeT = 1.2; z.hitP = {};
+        z.cx = (target.x - z.x) / d; z.cz = (target.z - z.z) / d;
+        z.yaw = Math.atan2(z.cx, z.cz);
+        this.emit({ k: 'roar', x: z.x, z: z.z, type: 'butcher' });
+        return { dx: z.cx, dz: z.cz, speed: 0 };
+      }
+    } else if (z.type === 'mother') {
+      if (z.ab <= 0) {
+        z.ab = 9;
+        this.emit({ k: 'roar', x: z.x, z: z.z, type: 'mother' });
+        for (let i = 0; i < 3; i++) { const a = Math.random() * Math.PI * 2; this._spawnAt('runner', z.x + Math.cos(a) * 2.5, z.z + Math.sin(a) * 2.5); }
+      }
+      if (z.ab2 <= 0 && target && d < 28) {
+        z.ab2 = 4.5;
+        (this.spits ||= []).push({ x: target.x, z: target.z, t: 0.9 });
+        this.emit({ k: 'spit', a: [z.x, z.z], b: [target.x, target.z] });
+      }
+    } else if (z.type === 'hollow') {
+      // blinks right behind you when nobody's watching
+      if (z.ab <= 0 && target && !seenBy(z, players)) {
+        z.ab = 6 + Math.random() * 3;
+        const bx = target.x + Math.sin(target.yaw) * 5, bz = target.z + Math.cos(target.yaw) * 5;
+        z.x = bx; z.z = bz; collide(z, 0.9);
+        this.emit({ k: 'blink', x: z.x, z: z.z, p: tp });
+      }
+      if (z.ab2 <= 0 && target && d < 22) {
+        z.ab2 = 11;
+        this.emit({ k: 'scream', x: z.x, z: z.z });
+        players.forEach((p, i) => { if (p && !p.down && Math.hypot(p.x - z.x, p.z - z.z) < 24) this.emit({ k: 'stun', p: i, t: 2.5 }); });
+      }
+    }
+    return null;
+  }
+
   _snapshot() {
     const s = this.state;
+    const boss = this.zombies.find((q) => q.T.boss);
+    s.boss = boss ? { name: boss.T.boss, hp: Math.max(0, Math.round(boss.hp / boss.max * 1000) / 10) } : null;
     s.looted = [...this.looted];
     s.z = this.zombies.map((z) => {
-      const f = (z.burn > 0 ? 1 : 0) | (z.stun > 0 ? 2 : 0) | (z.poison > 0 || z.slow > 0 ? 4 : 0) | (z.attacking ? 8 : 0) | (z.flash ? 16 : 0);
+      const f = (z.burn > 0 ? 1 : 0) | (z.stun > 0 ? 2 : 0) | (z.poison > 0 || z.slow > 0 ? 4 : 0) | (z.attacking || z.mode === 'windup' ? 8 : 0) | (z.flash ? 16 : 0)
+        | (z.frozen ? 32 : 0) | (z.mode === 'charge' ? 64 : 0);
       z.flash = false;
       return [z.id, z.ti, Math.round(z.x * 100) / 100, Math.round(z.z * 100) / 100, Math.round(z.yaw * 100) / 100, Math.round(z.hp / z.max * 100), f];
     });

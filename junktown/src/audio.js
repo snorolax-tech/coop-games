@@ -1,5 +1,5 @@
 // Tiny Web Audio synth: every sound is generated, no audio files.
-let ctx = null, master = null, noiseBuf = null;
+let ctx = null, master = null, noiseBuf = null, out = null;
 
 function ac() {
   if (!ctx) {
@@ -19,14 +19,14 @@ function tone(freq, dur, type = 'square', vol = 0.3, slide = 0, delay = 0) {
   o.type = type; o.frequency.setValueAtTime(freq, t);
   if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), t + dur);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+  o.connect(g); g.connect(out || master); o.start(t); o.stop(t + dur + 0.02);
 }
 function noise(dur, vol = 0.3, freq = 1200, q = 1, delay = 0) {
   const c = ac(), t = c.currentTime + delay;
   const s = c.createBufferSource(); s.buffer = noiseBuf;
   const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
   const g = c.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.02);
+  s.connect(f); f.connect(g); g.connect(out || master); s.start(t); s.stop(t + dur + 0.02);
 }
 
 const last = {};
@@ -74,8 +74,41 @@ export function sfx(name, throttle = 0) {
       case 'dawn': [523, 659, 784].forEach((f, i) => tone(f, 0.35, 'triangle', 0.18, 0, i * 0.18)); break;
       case 'fuse': tone(1200, 0.05, 'square', 0.1); break;
       case 'zap': noise(0.15, 0.25, 5000, 2); tone(1500, 0.1, 'sawtooth', 0.08, -800); break;
+      case 'scare':
+        noise(0.9, 0.9, 900, 0.4); noise(0.6, 0.7, 3500, 1);
+        [233, 247, 349, 370, 740].forEach((f) => tone(f, 1.1, 'sawtooth', 0.22, -40));
+        tone(55, 1.2, 'square', 0.5, -20); break;
+      case 'shriek': tone(900, 0.7, 'sawtooth', 0.22, 700); tone(1300, 0.6, 'sawtooth', 0.12, -500, 0.05); noise(0.6, 0.25, 3000, 3); break;
+      case 'heartbeat': tone(55, 0.12, 'sine', 0.7, -15); tone(50, 0.14, 'sine', 0.55, -15, 0.2); break;
+      case 'siren': for (let i = 0; i < 3; i++) { tone(440, 0.6, 'sawtooth', 0.12, 330, i * 1.2); tone(770, 0.6, 'sawtooth', 0.12, -330, i * 1.2 + 0.6); } break;
+      case 'tick10': tone(1000, 0.08, 'square', 0.18); break;
+      case 'whisper': noise(1.6, 0.12, 2400, 6); noise(1.2, 0.08, 1700, 8, 0.4); break;
+      case 'distant': tone(700, 1.4, 'sawtooth', 0.05, -350); noise(1.2, 0.05, 1500, 2); break;
+      case 'roar': tone(70, 1.6, 'sawtooth', 0.45, -25); tone(95, 1.4, 'square', 0.25, -40); noise(1.4, 0.5, 400, 0.5); break;
+      case 'blackout': tone(300, 1.2, 'sawtooth', 0.25, -270); noise(0.3, 0.4, 5000, 4); tone(60, 0.5, 'square', 0.25, 0, 0.1); break;
+      case 'power': tone(60, 0.4, 'square', 0.25, 200); tone(120, 0.6, 'sine', 0.2, 600, 0.2); break;
+      case 'scream': for (let i = 0; i < 5; i++) tone(500 + i * 170, 1.5, 'sawtooth', 0.12, 300 - i * 150); noise(1.5, 0.45, 2500, 0.7); break;
+      case 'blink': noise(0.4, 0.4, 200, 0.5); tone(1500, 0.3, 'sine', 0.2, -1400); break;
+      case 'spit': noise(0.3, 0.35, 600, 1); tone(200, 0.3, 'sawtooth', 0.15, -120); break;
+      case 'charge': for (let i = 0; i < 6; i++) { tone(50, 0.15, 'square', 0.4, -10, i * 0.22); noise(0.12, 0.35, 300, 1, i * 0.22); } break;
+      case 'bossintro': tone(41, 3, 'sawtooth', 0.4, 0); tone(49, 3, 'sawtooth', 0.3, 0); [196, 185, 174, 165].forEach((f, i) => tone(f, 0.9, 'square', 0.15, -10, i * 0.6)); noise(2.5, 0.25, 200, 0.4); break;
       case 'click': tone(800, 0.04, 'square', 0.1); break;
     }
   } catch { /* audio not available */ }
+}
+/** play a sound placed in the world: quieter with distance, panned left/right */
+export function sfx3d(name, x, z, lx, lz, lyaw, throttle = 0, range = 60) {
+  try {
+    const c = ac();
+    const dx = x - lx, dz = z - lz, d = Math.hypot(dx, dz);
+    if (d > range) return;
+    const g = c.createGain(); g.gain.value = Math.max(0.05, 1 - d / range) ** 1.5 * 1.4;
+    const p = c.createStereoPanner();
+    // right vector of a listener looking towards (-sin yaw, -cos yaw)
+    p.pan.value = Math.max(-1, Math.min(1, (dx * Math.cos(lyaw) - dz * Math.sin(lyaw)) / (d || 1)));
+    g.connect(p); p.connect(master);
+    out = g;
+    sfx(name, throttle);
+  } catch { /* */ } finally { out = null; }
 }
 export function unlockAudio() { try { ac(); } catch { /* */ } }

@@ -23,7 +23,8 @@ export class Player {
     this.sel = 0;
     this.cd = 0; this.swing = 0; this.hitAt = 0; this.flaming = false; this.flameTick = 0;
     this.projectiles = [];
-    this.hurtT = 0; this.bob = 0;
+    this.hurtT = 0; this.bob = 0; this.stunT = 0;
+    this.kb = new THREE.Vector3();
     // viewmodel
     this.hand = new THREE.Group();
     this.hand.position.set(0.38, -0.42, -0.7);
@@ -31,8 +32,10 @@ export class Player {
     this.heldSig = null;
     // flashlight
     this.light = new THREE.SpotLight(0xfff4d6, 0, 40, 0.45, 0.5, 1.2);
-    this.light.position.set(0.2, -0.1, 0);
+    this.light.position.set(0.1, 0.05, -1.1); // ahead of the held item so it does not glare
     camera.add(this.light); camera.add(this.light.target);
+    this.handLight = new THREE.PointLight(0xffe8c0, 1.2, 2.2, 1); // keeps the held item faintly visible in the dark
+    this.handLight.position.set(0.1, 0.1, -0.3); camera.add(this.handLight);
     this.light.target.position.set(0, 0, -10);
     // placement ghost
     this.ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -43,10 +46,9 @@ export class Player {
 
   reset() {
     this.pos.set((Math.random() - 0.5) * 4, 0, 6 + Math.random() * 2);
-    this.hp = 100; this.down = false; this.vy = 0;
+    this.hp = 100; this.down = false; this.vy = 0; this.stunT = 0; this.kb.set(0, 0, 0);
     this.inv.fill(null);
-    this.inv[0] = makeItem(['pipe']);
-    this.inv[1] = makeItem(['bandage']);
+    this.inv[0] = makeItem(['plank']);
     this.sel = 0;
   }
 
@@ -61,9 +63,10 @@ export class Player {
   }
   removeHeld() { this.inv[this.sel] = null; }
 
-  hurt(dmg) {
+  hurt(dmg, kb) {
     if (this.down || this.g.state?.ph === 'over') return;
     this.hp -= dmg;
+    if (kb) { this.kb.x += kb[0]; this.kb.z += kb[1]; this.vy = Math.max(this.vy, 4); this.grounded = false; }
     this.hurtT = 0.4;
     sfx('hurt', 80);
     if (this.hp <= 0) { this.hp = 0; this.down = true; sfx('down'); }
@@ -80,8 +83,11 @@ export class Player {
     const right = _b.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     const wish = _c.set(0, 0, 0).addScaledVector(fwd, inp.mz).addScaledVector(right, inp.mx);
     if (wish.lengthSq() > 1) wish.normalize();
-    const speed = this.down ? 1.1 : inp.sprint ? 8.5 : 5.2;
+    const speed = (this.down ? 1.1 : inp.sprint ? 8.5 : 5.2) * (this.stunT > 0 ? 0.45 : 1);
     this.pos.addScaledVector(wish, speed * dt);
+    this.pos.addScaledVector(this.kb, dt);
+    this.kb.multiplyScalar(Math.exp(-5 * dt));
+    if (this.stunT > 0) this.stunT -= dt;
     if (!this.down && inp.jump && this.grounded) { this.vy = 7.5; this.grounded = false; }
     this.vy -= GRAV * dt;
     this.pos.y += this.vy * dt;
@@ -91,7 +97,7 @@ export class Player {
     this.pos.z = Math.max(-MAP, Math.min(MAP, this.pos.z));
     const moving = wish.lengthSq() > 0.01 && this.grounded;
     this.bob += dt * (moving ? (inp.sprint ? 13 : 9) : 0);
-    if (this.g.state?.ph === 'day' && !this.down) this.hp = Math.min(100, this.hp + dt * 1.5);
+    if (this.g.state?.ph === 'day' && !this.down) this.hp = Math.min(100, this.hp + dt * 0.5);
 
     // ---- camera
     const eye = this.down ? 0.5 : EYE;
@@ -100,6 +106,7 @@ export class Player {
     this.cam.rotateY(this.yaw); this.cam.rotateX(this.pitch);
     if (this.hurtT > 0) { this.hurtT -= dt; this.cam.rotateZ(Math.sin(this.hurtT * 60) * this.hurtT * 0.08); }
     if (this.down) this.cam.rotateZ(0.3);
+    if (this.stunT > 0) { this.cam.rotateZ(Math.sin(this.bob * 0.7 + performance.now() / 300) * 0.12 * Math.min(1, this.stunT)); }
 
     // ---- held item
     const it = this.held, s = this.stats;
@@ -118,8 +125,8 @@ export class Player {
     this.hand.visible = !this.down;
     this.cd -= dt;
     const night = this.g.town.night;
-    this.light.intensity = (s?.light ? 40 + s.light * 25 : 0) + night * 18;
-    this.light.distance = s?.light ? 45 : 22;
+    this.light.intensity = (s?.light ? 40 + s.light * 25 : 0) + night * 9;
+    this.light.distance = s?.light ? 45 : 16;
 
     // swing animation
     const swingK = this.swing > 0 ? Math.sin((1 - this.swing / 0.3) * Math.PI) : 0;

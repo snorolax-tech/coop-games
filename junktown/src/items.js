@@ -111,19 +111,19 @@ export function analyze(parts) {
       s.reach = Math.min(4.2, 2 + P.long * 0.55);
       s.cd = 0.4 + (P.blunt + P.sturdy) * 0.045;
       s.arc = 70 + P.long * 8 + P.spin * 10;
-      s.maxUses = Math.round(25 + P.sturdy * 15 + P.blunt * 4 + n * 4);
+      s.maxUses = Math.round(12 + P.sturdy * 8 + P.blunt * 2 + n * 2);
       break;
     case 'gun':
       s.dmg = 10 + P.fragment * 6 + P.sharp * 4 + P.blunt * 4;
       s.radius = P.explosive ? 2.5 + P.explosive * 1.3 : 0;
       s.speed = 32 + P.launch * 8;
       s.cd = 0.35 + P.explosive * 0.25 + P.blunt * 0.05;
-      s.maxUses = 5 + P.launch * 3 + P.hollow * 2;
+      s.maxUses = 3 + P.launch * 2 + P.hollow;
       break;
     case 'flamer':
       s.dps = 26 + P.spark * 6 + P.flammable * 2;
       s.reach = 7 + P.long * 0.6;
-      s.maxUses = Math.round((P.flammable * 3 + P.liquid * 2) * 10); // tenths of a second of fuel
+      s.maxUses = Math.round((P.flammable * 2 + P.liquid * 1.5) * 10); // tenths of a second of fuel
       break;
     case 'throw':
       s.radius = 2.5 + P.explosive * 1.5 + (P.toxic ? 1.5 : 0) + (P.flammable >= 2 ? 1 : 0);
@@ -137,25 +137,25 @@ export function analyze(parts) {
       s.maxUses = 1;
       break;
     case 'trap':
-      s.dps = 14 + P.sharp * 9 + P.blunt * 4 + P.spin * 3;
+      s.dps = 9 + P.sharp * 6 + P.blunt * 3 + P.spin * 2;
       s.radius = 1.8 + P.long * 0.35;
-      s.hp = 35 + P.sturdy * 15 + n * 5; // seconds of grinding
+      s.hp = 22 + P.sturdy * 10 + n * 4; // seconds of grinding
       s.maxUses = 1;
       break;
     case 'magnet':
       s.radius = 10 + P.magnetic * 1.5;
       s.dps = P.sharp * 8 + P.fragment * 5 + P.blunt * 3;
-      s.hp = 30 + P.sturdy * 10 + P.magnetic * 5;
+      s.hp = 20 + P.sturdy * 8 + P.magnetic * 3;
       s.maxUses = 1;
       break;
     case 'wall':
-      s.hp = P.sturdy * 55 + P.blunt * 15 + n * 10;
+      s.hp = P.sturdy * 38 + P.blunt * 10 + n * 8;
       s.width = Math.min(6, 2.4 + P.long * 0.5);
       s.thorns = (P.sharp + P.fragment) * 6;
       s.maxUses = 1;
       break;
     case 'heal':
-      s.amount = P.heal * 22;
+      s.amount = P.heal * 18;
       s.maxUses = 1;
       break;
   }

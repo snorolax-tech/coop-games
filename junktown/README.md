@@ -59,10 +59,25 @@ zombies, then explodes) · magnet + nails = Spike Magnet.
 
 ## Nights
 
-Night N spawns `8 + 6×(N−1)` zombies from the edge of town. Runners show up on night 2,
-armored brutes on night 3 (only heavy blunt hits or explosions do full damage), exploders
-on night 4. At 0 HP you're downed: your friend holds E on you to revive. Both down = game over.
-Each dawn about 60% of searched containers restock.
+A siren goes off 30 seconds before nightfall, the sky turns red, and the last 10 seconds count
+down on screen. Night N spawns `10 + 7×(N−1)` zombies from the edge of town. Runners (they
+shriek when they spot you) show up on night 2, armored brutes on night 3 (only heavy blunt hits or
+explosions do full damage), exploders on night 4.
+
+**Scary stuff:** zombies sometimes hide in containers and jump out when you search them. From
+night 2 **stalkers** appear: they freeze while someone looks at them and sprint when nobody is.
+Nights can have **power outages** (lamps and campfire die), and you'll hear a heartbeat when
+something is close, plus noises out in the dark.
+
+**Bosses** every 3rd night (night 3, 6, 9, then they repeat, tougher):
+- **The Butcher**: roars, then charges in a straight line, smashing through barricades.
+- **The Mother**: births runners and spits acid puddles that burn players.
+- **The Hollow**: kills the power for the whole fight, blinks behind you when nobody's watching,
+  and screams to stun you.
+
+At 0 HP you're downed: your friend holds E on you to revive. Both down = game over.
+Loot is scarce (some containers are empty) and better items only show up on later days.
+Each dawn about a third of searched containers restock.
 
 ## Code map
 

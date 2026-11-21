@@ -7,24 +7,31 @@ export const SPAWN_R = 72;      // zombies spawn on this ring
 export const BENCH = { x: 4, z: 4 };
 export const BASE = { x: 0, z: 0 };
 
+// [item, first day it can show up, weight]. Good stuff is rare and only appears on later days.
 const LOOT = {
-  toolbox: ['pipe', 'drill', 'sawblade', 'wire', 'battery', 'tape', 'nails', 'chain', 'spring', 'scrap', 'carbatt'],
-  kitchen: ['knife', 'bottle', 'pan', 'bleach', 'glue', 'lighter', 'tape', 'alarm', 'fan', 'bandage', 'machete'],
-  car: ['carbatt', 'gascan', 'rope', 'flashlight', 'tape', 'spring', 'bat', 'scrap', 'pipe'],
-  dumpster: ['scrap', 'plank', 'bottle', 'brick', 'nails', 'bucket', 'chain', 'fence', 'plank'],
-  gas: ['gascan', 'lighter', 'propane', 'firework', 'bottle', 'flashlight', 'gascan'],
-  shed: ['mowblade', 'rake', 'fence', 'plank', 'rope', 'bucket', 'spring', 'fan', 'magnet'],
-  medicine: ['bandage', 'pills', 'medkit', 'bandage', 'pills'],
-  store: ['firework', 'bowling', 'bat', 'magnet', 'battery', 'flashlight', 'alarm', 'glue', 'bleach', 'propane'],
+  toolbox: [['nails', 1, 3], ['wire', 1, 3], ['tape', 1, 3], ['scrap', 1, 3], ['pipe', 1, 2], ['chain', 1, 2], ['battery', 2, 2], ['spring', 2, 2], ['drill', 3, 1], ['sawblade', 3, 1], ['carbatt', 4, 1]],
+  kitchen: [['bottle', 1, 4], ['pan', 1, 3], ['glue', 1, 2], ['knife', 1, 2], ['alarm', 1, 2], ['bleach', 2, 2], ['lighter', 2, 2], ['fan', 2, 1], ['machete', 3, 1]],
+  car: [['rope', 1, 3], ['scrap', 1, 3], ['tape', 1, 2], ['flashlight', 1, 2], ['bat', 2, 1], ['spring', 2, 1], ['gascan', 2, 1], ['carbatt', 3, 1]],
+  dumpster: [['scrap', 1, 4], ['bottle', 1, 4], ['brick', 1, 3], ['plank', 1, 3], ['bucket', 1, 2], ['nails', 1, 2], ['chain', 2, 1], ['fence', 2, 1]],
+  gas: [['bottle', 1, 3], ['lighter', 1, 2], ['flashlight', 1, 2], ['gascan', 2, 2], ['firework', 3, 1], ['propane', 4, 1]],
+  shed: [['rope', 1, 3], ['bucket', 1, 3], ['plank', 1, 3], ['rake', 1, 2], ['fence', 2, 2], ['spring', 2, 1], ['fan', 2, 1], ['mowblade', 3, 1], ['magnet', 4, 1]],
+  medicine: [['pills', 1, 4], ['bandage', 1, 2], ['medkit', 3, 1]],
+  store: [['alarm', 1, 2], ['glue', 1, 2], ['battery', 1, 2], ['flashlight', 1, 2], ['bat', 2, 1], ['bleach', 2, 1], ['bowling', 2, 1], ['firework', 3, 1], ['magnet', 4, 1], ['propane', 5, 1]],
 };
 export const CONTAINER_NAMES = { toolbox: 'Toolbox', kitchen: 'Kitchen Cabinet', car: 'Car Trunk', dumpster: 'Dumpster',
   gas: 'Gas Station Shelf', shed: 'Garden Shed', medicine: 'Medicine Cabinet', store: 'Store Shelf', stash: 'Base Stash' };
 
-export function rollLoot(type, rng = Math.random) {
-  if (type === 'stash') return ['plank', 'plank', 'knife', 'bat', 'tape', 'bandage'];
-  const t = LOOT[type];
-  const n = 2 + (rng() < 0.45 ? 1 : 0);
-  return Array.from({ length: n }, () => t[Math.floor(rng() * t.length)]);
+export function rollLoot(type, day = 1, rng = Math.random) {
+  if (type === 'stash') return ['plank', 'tape'];
+  if (rng() < 0.22) return []; // nothing useful
+  const t = LOOT[type].filter(([, d]) => d <= day);
+  const total = t.reduce((a, [, , w]) => a + w, 0);
+  const n = rng() < 0.25 ? 2 : 1;
+  return Array.from({ length: n }, () => {
+    let r = rng() * total;
+    for (const [id, , w] of t) { r -= w; if (r <= 0) return id; }
+    return t[0][0];
+  });
 }
 
 // ---------------------------------------------------------------- layout
@@ -32,10 +39,11 @@ const HOUSE_COLORS = [0xd8c3a5, 0xa3c4bc, 0xe8b4a0, 0xc9d6df, 0xf1e3c8, 0xb8a9c9
 function layout() {
   const B = []; // {x,z,w,d,h,kind}
   const C = []; // containers {type,x,z,rot}
+  let hn = 0;
   const house = (x, z, face) => {
     B.push({ x, z, w: 10, d: 8, h: 5, kind: 'house' });
     C.push({ type: 'kitchen', x: x - 2, z: z + face * 5, rot: 0 });
-    C.push({ type: 'medicine', x: x + 3, z: z + face * 5, rot: 0 });
+    if (hn++ % 2 === 0) C.push({ type: 'medicine', x: x + 3, z: z + face * 5, rot: 0 });
   };
   house(20, 18, -1); house(38, 18, -1); house(-20, 18, -1); house(-40, 18, -1);
   house(20, -18, 1); house(40, -18, 1); house(-44, -20, 1);
@@ -227,18 +235,27 @@ export class Town {
   }
 
   /** k: 0 = full day, 1 = full night */
-  setNight(k, focus) {
+  /** k: 0 = full day, 1 = full night. dusk: 0..1 red sunset tint. blackout: lamps + fire off */
+  setNight(k, focus, dusk = 0, blackout = false, t = 0) {
     this.night = k;
-    const day = new THREE.Color(0x9fc4e0), night = new THREE.Color(0x0b1020);
-    this.scene.background.copy(day).lerp(night, k);
+    const day = new THREE.Color(0x9fc4e0), night = new THREE.Color(0x05070d);
+    this.scene.background.copy(day).lerp(_red, dusk * (1 - k) * 0.85).lerp(night, k);
     this.scene.fog.color.copy(this.scene.background);
-    this.scene.fog.near = 40 - k * 25; this.scene.fog.far = 140 - k * 85;
-    this.hemi.intensity = 1.4 - k * 1.05;
-    this.hemi.color.set(0xdde8ff).lerp(new THREE.Color(0x4060a0), k);
-    this.sun.intensity = 2.4 * (1 - k) + 0.25 * k;
-    this.sun.color.set(0xfff0d8).lerp(new THREE.Color(0x8899cc), k);
-    this.fireLight.intensity = 6 + k * 40;
-    for (const L of this.lamps) { L.l.intensity = k * 35; L.bulb.material.color.setHex(k > 0.4 ? 0xffe6a8 : 0x777766); }
+    this.scene.fog.near = 40 - k * 32; this.scene.fog.far = 140 - k * 108;
+    this.hemi.intensity = 1.4 - k * 1.27;
+    this.hemi.color.set(0xdde8ff).lerp(new THREE.Color(0x30406a), k);
+    this.sun.intensity = 2.4 * (1 - k) + 0.08 * k;
+    this.sun.color.set(0xfff0d8).lerp(_red, dusk * 0.7).lerp(new THREE.Color(0x6677aa), k);
+    const fireOn = !blackout;
+    this.flame.visible = fireOn;
+    this.fireLight.intensity = fireOn ? (6 + k * 40) * (0.85 + Math.sin(t * 11) * 0.1 + Math.sin(t * 23) * 0.05) : 0;
+    this.lamps.forEach((L, i) => {
+      // lamps flicker at night, and die completely in a blackout
+      const flick = Math.sin(t * (3 + i) + i * 7) > 0.93 || (i % 3 === 0 && Math.sin(t * 17 + i) > 0.6 && Math.sin(t * 0.7 + i) > 0.5) ? 0.1 : 1;
+      const on = !blackout && k > 0.3;
+      L.l.intensity = on ? k * 30 * flick : 0;
+      L.bulb.material.color.setHex(on && flick > 0.5 ? 0xffe6a8 : 0x333333);
+    });
     if (focus) { this.sun.position.set(focus.x + 30, 60, focus.z + 20); this.sun.target.position.set(focus.x, 0, focus.z); }
   }
 
@@ -247,6 +264,8 @@ export class Town {
     for (const g of this.containerMeshes.values()) if (g.userData.marker.visible) { g.userData.marker.rotation.y = t * 2; g.userData.marker.position.y += Math.sin(t * 3) * 0.002; }
   }
 }
+
+const _red = new THREE.Color(0xc0402a);
 
 export function mulberry(a) {
   return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
