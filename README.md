@@ -7,6 +7,7 @@ Separate browser games. Each has its own folder, `package.json` and `node_module
 | 🍳 Cooking Show Chaos | [cooking-show-chaos/](cooking-show-chaos/) | `cd cooking-show-chaos; npm install; npm run dev` → http://localhost:5173 |
 | 🐾 Monster Ranch | [monster-ranch/](monster-ranch/) | `cd monster-ranch; npm install; npm run dev` → http://localhost:5174 |
 | 🔩 Scrap Brawl | [scrap-brawl/](scrap-brawl/) | `cd scrap-brawl; npm install; npm run dev` → http://localhost:5175 |
+| 🧟 Junktown Nights | [junktown/](junktown/) | `cd junktown; npm install; npm run dev` → http://localhost:5176 |
 
 ## Deploying
 
@@ -15,3 +16,4 @@ Separate browser games. Each has its own folder, `package.json` and `node_module
 - Cooking Show Chaos → `https://<user>.github.io/<repo>/`
 - Monster Ranch → `https://<user>.github.io/<repo>/monster-ranch/`
 - Scrap Brawl → `https://<user>.github.io/<repo>/scrap-brawl/`
+- Junktown Nights → `https://<user>.github.io/<repo>/junktown/`
