@@ -1,5 +1,5 @@
 // Menus, HUD, and the crafting bench screen.
-import { analyze, formLabel, PROP_INFO, PROPS, MAX_PARTS, BASE } from './items.js';
+import { analyze, formLabel, PROP_INFO, PROPS, MAX_PARTS, BASE, repairPair } from './items.js';
 import { HOTBAR } from './player.js';
 
 const h = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; e.innerHTML = html; return e; };
@@ -69,10 +69,10 @@ export class UI {
 
     // crafting screen
     this.craft = h('div', 'craft hidden', `
-      <div class="ctitle">🔧 WORKBENCH <small>pick 2–3 things to combine (crafted items count too)</small></div>
+      <div class="ctitle">🔧 WORKBENCH <small>pick 2–3 things to combine · or a worn weapon + tape / glue / scrap to repair it · launcher + nails/junk to reload · flamethrower + gas to refuel</small></div>
       <div class="cgrid"></div>
       <div class="cmid"><div class="cslots"></div><div class="arrow">➜</div><div class="preview"></div></div>
-      <div class="cbtns"><button data-a="craft">Craft it!</button><button class="alt" data-a="close">Close (E)</button></div>`);
+      <div class="cbtns"><button data-a="repair" class="rep hidden">🔧 Repair</button><button data-a="craft">Craft it!</button><button class="alt" data-a="close">Close (E)</button></div>`);
     root.appendChild(this.craft);
 
     // inventory screen
@@ -93,6 +93,7 @@ export class UI {
     this.drag = null;
     this.craft.querySelector('[data-a=close]').onclick = () => cb.onCloseCraft();
     this.craft.querySelector('[data-a=craft]').onclick = () => cb.onCraft(this.picked);
+    this.craft.querySelector('[data-a=repair]').onclick = () => cb.onRepair(this.picked);
     this.picked = [];
   }
 
@@ -314,13 +315,18 @@ export class UI {
     }).join('<div class="plus">+</div>');
     const pv = this.craft.querySelector('.preview');
     const btn = this.craft.querySelector('[data-a=craft]');
+    const rbtn = this.craft.querySelector('[data-a=repair]');
     const items = this.picked.map((i) => p.inv[i]);
     const parts = items.flatMap((x) => x.parts);
+    const rep = items.length === 2 ? repairPair(items[0], items[1]) : null;
+    rbtn.classList.toggle('hidden', !rep);
+    if (rep) rbtn.textContent = '🔧 ' + rep.label.split(':')[0];
     if (items.length < 2) { pv.innerHTML = '<div class="k">Pick at least 2 items</div>'; btn.disabled = true; return; }
     const a = analyze(parts.slice(0, MAX_PARTS));
     const warn = parts.length > MAX_PARTS ? `<div class="warn2">Too many parts! Only the first ${MAX_PARTS} will be used.</div>` : '';
     pv.innerHTML = `<div class="pn">${a.name}</div><div class="pf">${formLabel(a.form)}</div><div class="chips">${propChips(a.P)}</div>
-      <div class="pd">${a.desc.replace(/\n/g, '<br>')}</div><div class="pp">Made from: ${parts.slice(0, MAX_PARTS).map((x) => BASE[x].name).join(', ')}</div>${warn}`;
+      <div class="pd">${a.desc.replace(/\n/g, '<br>')}</div><div class="pp">Made from: ${parts.slice(0, MAX_PARTS).map((x) => BASE[x].name).join(', ')}</div>${warn}`
+      + (rep ? `<div class="reppv">…or <b>${rep.label}</b> on your ${analyze(rep.target.parts).name} (uses up the ${analyze(rep.mat.parts).name})</div>` : '');
     btn.disabled = false;
   }
 }

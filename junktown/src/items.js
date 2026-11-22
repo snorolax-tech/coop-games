@@ -57,6 +57,42 @@ export const BASE = {
 };
 
 export const MAX_PARTS = 6;
+
+// ------------------------------------------------------------------ repairing & reloading
+// Melee weapons get patched up, launchers get reloaded with junk, flamethrowers get refuelled.
+const PATCH = { tape: 0.5, glue: 0.6, scrap: 0.4, wire: 0.3, rope: 0.3, nails: 0.25 };
+/** can `mat` (a single base item) fix up `target`? returns {amount, label} or null */
+export function repairInfo(target, mat) {
+  if (!target || !mat || mat.parts.length !== 1) return null;
+  const a = analyze(target.parts);
+  const id = mat.parts[0];
+  if (target.uses >= a.maxUses) return null;
+  const missing = a.maxUses - target.uses;
+  if (a.form === 'melee' && PATCH[id]) {
+    const amount = Math.min(missing, Math.ceil(a.maxUses * PATCH[id]));
+    return { amount, label: `Repair: +${amount} durability` };
+  }
+  if (a.form === 'gun') {
+    const P = BASE[id].props;
+    const shots = (P.fragment || 0) * 2 + (P.blunt || 0) + (P.explosive || 0) * 3 + (P.launch || 0) * 2 + (P.sharp || 0);
+    if (!shots) return null;
+    const amount = Math.min(missing, shots + 1);
+    return { amount, label: `Reload: +${amount} shots` };
+  }
+  if (a.form === 'flamer' && (BASE[id].props.flammable || 0) >= 2) {
+    const amount = Math.min(missing, BASE[id].props.flammable * 40);
+    return { amount, label: `Refuel: +${(amount / 10).toFixed(1)}s of fuel` };
+  }
+  return null;
+}
+/** which of two items is the thing being fixed, and which is the material */
+export function repairPair(a, b) {
+  const r1 = repairInfo(a, b);
+  if (r1) return { target: a, mat: b, ...r1 };
+  const r2 = repairInfo(b, a);
+  if (r2) return { target: b, mat: a, ...r2 };
+  return null;
+}
 let uidCounter = Math.floor(Math.random() * 1e6) * 100;
 export const newUid = () => ++uidCounter;
 
@@ -111,19 +147,19 @@ export function analyze(parts) {
       s.reach = Math.min(4.2, 2 + P.long * 0.55);
       s.cd = 0.4 + (P.blunt + P.sturdy) * 0.045;
       s.arc = 70 + P.long * 8 + P.spin * 10;
-      s.maxUses = Math.round(12 + P.sturdy * 8 + P.blunt * 2 + n * 2);
+      s.maxUses = Math.round(20 + P.sturdy * 10 + P.blunt * 3 + n * 3);
       break;
     case 'gun':
       s.dmg = 10 + P.fragment * 6 + P.sharp * 4 + P.blunt * 4;
       s.radius = P.explosive ? 2.5 + P.explosive * 1.3 : 0;
       s.speed = 32 + P.launch * 8;
       s.cd = 0.35 + P.explosive * 0.25 + P.blunt * 0.05;
-      s.maxUses = 3 + P.launch * 2 + P.hollow;
+      s.maxUses = 6 + P.launch * 3 + P.hollow * 2;
       break;
     case 'flamer':
       s.dps = 26 + P.spark * 6 + P.flammable * 2;
       s.reach = 7 + P.long * 0.6;
-      s.maxUses = Math.round((P.flammable * 2 + P.liquid * 1.5) * 10); // tenths of a second of fuel
+      s.maxUses = Math.round((P.flammable * 3 + P.liquid * 2) * 10); // tenths of a second of fuel
       break;
     case 'throw':
       s.radius = 2.5 + P.explosive * 1.5 + (P.toxic ? 1.5 : 0) + (P.flammable >= 2 ? 1 : 0);

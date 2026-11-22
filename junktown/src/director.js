@@ -67,6 +67,7 @@ export class Director {
       blackout: false, boss: null, storage: new Array(STORAGE_SIZE).fill(null),
     };
     this.blackoutAt = -1; this.blackoutT = 0; this.bossPending = null; this.acidT = 0; this.nightT = 0;
+    this.sinceScare = [60, 60]; // seconds since each player got a scare
     this.scatterGround(1);
     this.emit({ k: 'dawn', day: 1 });
   }
@@ -79,7 +80,11 @@ export class Director {
     if (!c || this.looted.has(cid)) return;
     this.looted.add(cid);
     const day = this.state.day;
-    if (c.type !== 'stash' && Math.random() < Math.min(0.2, 0.05 + day * 0.025)) {
+    // everyone gets their share: if a player hasn't been scared in a while, this search is going to get them
+    const owed = this.sinceScare[p] > 140 && c.type !== 'stash';
+    if (owed && (c.type === 'car' || c.type === 'dumpster')) { /* handled below by the car alarm / dumpster grab */ }
+    else if (c.type !== 'stash' && (owed || Math.random() < Math.min(0.2, 0.05 + day * 0.025))) {
+      this.sinceScare[p] = 0;
       // SURPRISE: something was hiding in there
       const z = this._spawnAt('lurker', c.x, c.z);
       z.atk = 0.6;
@@ -88,7 +93,8 @@ export class Director {
       return;
     }
     // car alarm: the whole street hears it
-    if (c.type === 'car' && Math.random() < 0.22) {
+    if (c.type === 'car' && (owed || Math.random() < 0.22)) {
+      this.sinceScare[p] = 0;
       this.emit({ k: 'alarm', cid, x: c.x, z: c.z });
       this._zone('lure', c.x, c.z, 45, 9);
       const n = 3 + Math.min(5, day);
@@ -99,7 +105,7 @@ export class Director {
       }
     }
     // something in the dumpster grabs you
-    if (c.type === 'dumpster' && Math.random() < 0.2) this.emit({ k: 'grab', p, cid, x: c.x, z: c.z });
+    if (c.type === 'dumpster' && (owed || Math.random() < 0.2)) { this.sinceScare[p] = 0; this.emit({ k: 'grab', p, cid, x: c.x, z: c.z }); }
     this.emit({ k: 'loot', p, cid, items: rollLoot(c.type, day) });
   }
 
@@ -159,6 +165,7 @@ export class Director {
     if (this.fakes?.has(gid)) {
       // it was never loot: a zombie lying still, playing dead
       this.fakes.delete(gid);
+      this.sinceScare[p] = 0;
       const [k] = g.splice(i, 1);
       const z = this._spawnAt('lurker', k.x, k.z);
       z.atk = 0.5;
@@ -306,7 +313,7 @@ export class Director {
 
   _spawnAt(type, x, z) {
     const T = ZTYPES[type];
-    const hpMult = 1 + (this.state.day - 1) * 0.15;
+    const hpMult = 1 + (this.state.day - 1) * 0.1;
     const q = { id: this.nextId++, type, ti: ZT.indexOf(type), T, x, z, yaw: 0,
       hp: T.hp * hpMult, max: T.hp * hpMult, kx: 0, kz: 0, burn: 0, stun: 0, poison: 0, bleed: 0, slow: 0, atk: 0, attacking: false, flash: false,
       shrieked: false, frozen: false, ab: 4 + Math.random() * 3, ab2: 6, mode: 'chase', modeT: 0, cx: 0, cz: 0 };
@@ -319,6 +326,7 @@ export class Director {
   update(dt, players) {
     const s = this.state;
     if (s.ph === 'over') { this._snapshot(); return; }
+    for (let i = 0; i < 2; i++) this.sinceScare[i] += dt;
     // game over? (short grace after a restart so everyone can respawn)
     this.grace -= dt;
     const alive = players.slice(0, this.nPlayers).filter((p) => p && !p.down);
@@ -389,7 +397,7 @@ export class Director {
     this.acidT -= dt;
     if (this.acidT <= 0) {
       this.acidT = 0.5;
-      players.forEach((p, i) => { if (p && !p.down) for (const zn of s.zones) if (zn.kind === 'acid' && Math.hypot(zn.x - p.x, zn.z - p.z) < zn.r) { this.emit({ k: 'hurt', p: i, dmg: 5, x: zn.x, z: zn.z, acid: true }); break; } });
+      players.forEach((p, i) => { if (p && !p.down) for (const zn of s.zones) if (zn.kind === 'acid' && Math.hypot(zn.x - p.x, zn.z - p.z) < zn.r) { this.emit({ k: 'hurt', p: i, dmg: 4, x: zn.x, z: zn.z, acid: true }); break; } });
     }
     for (const a of this.spits || []) a.t -= dt;
     if (this.spits) {
@@ -514,7 +522,7 @@ export class Director {
         if (z.modeT <= 0) { z.mode = 'chase'; z.ab = 6 + Math.random() * 3; return null; }
         players.forEach((p, i) => {
           if (!p || p.down || z.hitP?.[i]) return;
-          if (Math.hypot(p.x - z.x, p.z - z.z) < 2.8) { (z.hitP ||= {})[i] = true; this.emit({ k: 'hurt', p: i, dmg: 38, x: z.x, z: z.z, kb: [z.cx * 22, z.cz * 22] }); }
+          if (Math.hypot(p.x - z.x, p.z - z.z) < 2.8) { (z.hitP ||= {})[i] = true; this.emit({ k: 'hurt', p: i, dmg: 30, x: z.x, z: z.z, kb: [z.cx * 22, z.cz * 22] }); }
         });
         return { dx: z.cx, dz: z.cz, speed: 16 };
       }
