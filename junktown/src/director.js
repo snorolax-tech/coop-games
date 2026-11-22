@@ -341,7 +341,7 @@ export class Director {
       if (s.t <= 0) {
         s.ph = 'night';
         s.skip = [false, false];
-        this.toSpawn = 8 + (s.day - 1) * 5;
+        this.toSpawn = 10 + (s.day - 1) * 7;
         this.stalkers = s.day >= 2 ? 1 + Math.floor((s.day - 2) / 2) : 0;
         this.bossPending = s.day % 3 === 0 ? BOSSES[(s.day / 3 - 1) % BOSSES.length] : null;
         this.bossAt = Math.floor(this.toSpawn / 2);

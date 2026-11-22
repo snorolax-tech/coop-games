@@ -25,7 +25,7 @@ export const CONTAINER_NAMES = { toolbox: 'Toolbox', kitchen: 'Kitchen Cabinet',
 
 export function rollLoot(type, day = 1, rng = Math.random) {
   if (type === 'stash') return ['plank', 'tape', 'bandage'];
-  if (rng() < 0.15) return []; // nothing useful
+  if (rng() < 0.22) return []; // nothing useful
   const t = LOOT[type].filter(([, d]) => d <= day);
   const total = t.reduce((a, [, , w]) => a + w, 0);
   const n = rng() < 0.25 ? 2 : 1;
