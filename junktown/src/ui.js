@@ -49,12 +49,18 @@ export class UI {
       <div class="hurt"></div>
       <div class="downed hidden">YOU'RE DOWN<br><small>Your friend can revive you (hold E)</small></div>
       <div class="lock">Click to play</div>
+      <div class="bossbar hidden"><div class="bn"></div><div class="bb"><div></div></div></div>
+      <div class="count"></div>
+      <div class="dusk"></div>
+      <div class="stunfx"></div>
+      <div class="scare"><svg viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="sk" cx="50%" cy="35%" r="65%"><stop offset="0" stop-color="#b9b8a6"/><stop offset=".6" stop-color="#6d6b5c"/><stop offset="1" stop-color="#1c1b16"/></radialGradient><filter id="gr"><feTurbulence baseFrequency=".9" numOctaves="2" result="n"/><feColorMatrix type="saturate" values="0"/><feBlend in="SourceGraphic" mode="multiply"/><feComposite in2="SourceGraphic" operator="in"/></filter></defs><g filter="url(#gr)"><path d="M100 4 C150 4 182 50 178 110 C176 160 160 210 130 246 C118 258 82 258 70 246 C40 210 24 160 22 110 C18 50 50 4 100 4 Z" fill="url(#sk)"/><path d="M38 70 C50 52 82 54 92 78 C96 104 80 124 60 122 C40 118 30 92 38 70 Z" fill="#050505"/><path d="M162 70 C150 52 118 54 108 78 C104 104 120 124 140 122 C160 118 170 92 162 70 Z" fill="#050505"/><circle cx="66" cy="94" r="3.5" fill="#f4f1e0"/><circle cx="134" cy="92" r="3.5" fill="#f4f1e0"/><path d="M96 120 L92 150 L108 150 L104 120 Z" fill="#2a2820"/><path d="M60 170 C62 150 138 150 140 170 C146 214 124 248 100 248 C76 248 54 214 60 170 Z" fill="#0a0303"/><path d="M64 168 L70 184 L76 166 L82 186 L88 164 L94 188 L100 163 L106 188 L112 164 L118 186 L124 166 L130 184 L136 168" fill="#cfc9a8"/><path d="M70 236 L76 220 L82 238 L90 218 L96 240 L104 218 L110 240 L118 220 L124 238 L130 222" fill="#b8b291"/><path d="M58 128 L54 160 M146 126 L150 158" stroke="#3a3628" stroke-width="3"/><path d="M60 122 L58 140 M140 120 L141 136" stroke="#5a0a0a" stroke-width="2"/><path d="M110 8 L104 40 L116 58 M60 20 L72 44" stroke="#2a281e" stroke-width="2" fill="none"/></g></svg></div>
       <div class="over panel hidden"><div class="ot"></div><div class="os"></div><button>Play Again</button><button class="alt" data-a="menu">Main Menu</button><div class="small orr"></div></div>`);
     root.appendChild(this.hud);
     const q = (s) => this.hud.querySelector(s);
     this.el = { phase: q('.phase'), sub: q('.sub2'), code: q('.code'), prompt: q('.prompt'), toasts: q('.toasts'), held: q('.held'),
       hp: q('.hp div'), hpt: q('.hp span'), bar: q('.bar'), friend: q('.friend'), hurt: q('.hurt'), downed: q('.downed'), lock: q('.lock'),
-      over: q('.over'), ot: q('.ot'), os: q('.os'), orr: q('.orr'), cross: q('.cross') };
+      over: q('.over'), ot: q('.ot'), os: q('.os'), orr: q('.orr'), cross: q('.cross'),
+      bossbar: q('.bossbar'), bn: q('.bn'), bb: q('.bb div'), count: q('.count'), dusk: q('.dusk'), stunfx: q('.stunfx'), scare: q('.scare') };
     q('.over button').onclick = () => cb.onRestart();
     q('.over [data-a=menu]').onclick = () => cb.onLeave();
     this.cache = {};
@@ -84,14 +90,27 @@ export class UI {
     while (this.el.toasts.children.length > 5) this.el.toasts.firstChild.remove();
   }
 
+  jumpScare() {
+    const e = this.el.scare;
+    e.classList.remove('go'); void e.offsetWidth; e.classList.add('go');
+  }
+
   update(g) {
     const s = g.state, p = g.player;
     if (!s || !p) return;
+    // boss health bar
+    this.el.bossbar.classList.toggle('hidden', !s.boss);
+    if (s.boss) { this.set('bn', s.boss.name); this.el.bb.style.width = s.boss.hp + '%'; }
+    // big countdown before night + red dusk
+    const counting = s.ph === 'day' && s.t <= 10;
+    this.set('count', counting ? `<div class="cl">NIGHT FALLS IN</div>${Math.ceil(s.t)}` : '');
+    this.el.dusk.style.opacity = s.ph === 'day' && s.t < 30 ? (30 - s.t) / 30 * 0.55 : 0;
+    this.el.stunfx.style.opacity = p.stunT > 0 ? Math.min(1, p.stunT) : 0;
     if (s.ph === 'day') {
-      this.set('phase', `☀ DAY ${s.day}`);
+      this.set('phase', s.t <= 30 ? `<span style="color:#ff6a4a">☀ DAY ${s.day}</span>` : `☀ DAY ${s.day}`);
       const ready = s.skip.filter(Boolean).length, need = g.director ? g.director.nPlayers : (g.mode === 'guest' ? 2 : 1);
       this.set('sub', `${fmt(s.t)} until nightfall · <span class="k">N</span> ready for night${need > 1 ? ` (${ready}/${need})` : ''}`);
-    } else if (s.ph === 'night') { this.set('phase', `🌙 NIGHT ${s.day}`); this.set('sub', `${s.left} zombies left · ${s.kills} killed`); }
+    } else if (s.ph === 'night') { this.set('phase', `🌙 NIGHT ${s.day}`); this.set('sub', `${s.left} zombies left · ${s.kills} killed${s.blackout ? ' · <span style="color:#ff6a4a">⚡ POWER OUT</span>' : ''}`); }
     else { this.set('phase', ''); this.set('sub', ''); }
     this.set('code', g.mode === 'host' && g.net.code ? `Town code: <b>${g.net.code}</b>${g.net.connected ? ' · friend connected' : ' · waiting for friend'}` : '');
     const hp = Math.max(0, p.hp);
