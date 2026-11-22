@@ -92,6 +92,12 @@ export function sfx(name, throttle = 0) {
       case 'spit': noise(0.3, 0.35, 600, 1); tone(200, 0.3, 'sawtooth', 0.15, -120); break;
       case 'charge': for (let i = 0; i < 6; i++) { tone(50, 0.15, 'square', 0.4, -10, i * 0.22); noise(0.12, 0.35, 300, 1, i * 0.22); } break;
       case 'bossintro': tone(41, 3, 'sawtooth', 0.4, 0); tone(49, 3, 'sawtooth', 0.3, 0); [196, 185, 174, 165].forEach((f, i) => tone(f, 0.9, 'square', 0.15, -10, i * 0.6)); noise(2.5, 0.25, 200, 0.4); break;
+      case 'slice': noise(0.12, 0.45, 4200, 1.2); tone(300, 0.08, 'sawtooth', 0.15, -200); noise(0.15, 0.3, 700, 1, 0.03); break;
+      case 'thud': tone(90, 0.18, 'sine', 0.6, -50); noise(0.14, 0.55, 500, 0.8); noise(0.06, 0.3, 2500, 1); break;
+      case 'crit': tone(70, 0.3, 'sine', 0.7, -40); noise(0.25, 0.6, 350, 0.6); noise(0.12, 0.4, 3000, 1, 0.02); break;
+      case 'snap': noise(0.08, 0.6, 2200, 3); tone(500, 0.06, 'square', 0.25, -300); noise(0.3, 0.3, 600, 1, 0.05); break;
+      case 'marker': tone(1400, 0.04, 'square', 0.08); break;
+      case 'kill': tone(900, 0.06, 'square', 0.12); tone(1300, 0.08, 'square', 0.1, 0, 0.05); break;
       case 'click': tone(800, 0.04, 'square', 0.1); break;
     }
   } catch { /* audio not available */ }

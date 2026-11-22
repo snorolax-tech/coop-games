@@ -104,3 +104,28 @@ input { font: inherit; font-size: 20px; padding: 10px; width: 120px; border-radi
   45% { opacity: 1; transform: scale(1.2) rotate(2deg); }
   100% { opacity: 0; transform: scale(1.5); background: rgba(0,0,0,0); }
 }
+
+.invp { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(1060px, 97vw); max-height: 94vh; overflow: auto; background: rgba(12,16,22,.96); border: 3px solid #3d5a80; border-radius: 16px; padding: 18px; text-shadow: none; pointer-events: auto; }
+.invcols { display: flex; gap: 16px; }
+.invleft { flex: 1; }
+.ilabel { font-size: 13px; font-weight: bold; margin: 10px 0 5px; opacity: .85; }
+.igrid { display: grid; grid-template-columns: repeat(10, 68px); gap: 5px; }
+.igrid.pack { grid-template-columns: repeat(5, 68px); }
+.igrid.store { grid-template-columns: repeat(10, 68px); }
+.islot { cursor: grab; }
+.islot.over { border-color: #9be564; background: rgba(60,90,40,.7); }
+.idetail { width: 250px; background: #161c26; border: 2px solid #3d5a80; border-radius: 12px; padding: 12px; align-self: flex-start; min-height: 160px; }
+.craft { max-height: 96vh; overflow: auto; }
+.craft .cgrid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.craft .card { min-height: 64px; padding: 6px; }
+.craft .card.empty { display: none; }
+
+.hm { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; transform: translate(-50%,-50%) rotate(45deg); opacity: 0; }
+.hm i { position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
+.hm i:nth-child(1) { left: 13px; top: 0; width: 4px; height: 9px; } .hm i:nth-child(2) { left: 13px; bottom: 0; width: 4px; height: 9px; }
+.hm i:nth-child(3) { top: 13px; left: 0; width: 9px; height: 4px; } .hm i:nth-child(4) { top: 13px; right: 0; width: 9px; height: 4px; }
+.hm.on { animation: hm .18s ease-out; }
+.hm.kill { animation: hmk .35s ease-out; }
+.hm.kill i { background: #ff3b3b; }
+@keyframes hm { 0% { opacity: 1; transform: translate(-50%,-50%) rotate(45deg) scale(1.3); } 100% { opacity: 0; transform: translate(-50%,-50%) rotate(45deg) scale(.9); } }
+@keyframes hmk { 0% { opacity: 1; transform: translate(-50%,-50%) rotate(45deg) scale(1.8); } 100% { opacity: 0; transform: translate(-50%,-50%) rotate(45deg) scale(1.1); } }

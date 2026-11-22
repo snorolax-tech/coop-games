@@ -1,9 +1,10 @@
 // Glue: renderer, input, networking, syncing the host's world state into meshes.
 import * as THREE from 'three';
 import { Net } from './net.js';
-import { Town, LAYOUT, BENCH, CONTAINER_NAMES } from './town.js';
+import { Town, LAYOUT, BENCH, CONTAINER_NAMES, STORAGE } from './town.js';
 import { Director, wallBox } from './director.js';
-import { Player } from './player.js';
+import { Player, HOTBAR } from './player.js';
+import { Character, PLAYER_COLORS } from './character.js';
 import { ZombieModel, ZTYPES } from './zombies.js';
 import { FX } from './fx.js';
 import { UI } from './ui.js';
@@ -50,13 +51,14 @@ export class Game {
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
       this.keys.add(e.code);
       if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
+      if (e.code === 'Tab' && this.mode !== 'menu' && this.player && !this.ui.crafting) { if (this.ui.invOpen) this.closeInv(); else this.openInv(); }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => { this.keys.clear(); this.mouse.down = false; });
     addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('mousedown', (e) => {
       unlockAudio();
-      if (this.ui.crafting || this.mode === 'menu') return;
+      if (this.ui.crafting || this.ui.invOpen || this.mode === 'menu') return;
       if (!this.locked) { canvas.requestPointerLock?.(); return; }
       if (e.button === 0) { this.mouse.down = true; this.mouse.pressed = true; }
     });
@@ -68,7 +70,8 @@ export class Game {
     });
     addEventListener('wheel', (e) => {
       if (!this.player || this.ui.crafting) return;
-      const n = this.player.inv.length;
+      if (this.ui.invOpen) return;
+      const n = HOTBAR;
       this.player.sel = (this.player.sel + (e.deltaY > 0 ? 1 : -1) + n) % n;
     });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; if (!this.locked) this.mouse.down = false; });
@@ -79,6 +82,20 @@ export class Game {
       onHost: () => this.startHost(), onJoin: (c) => this.joinGame(c), onSolo: () => this.startSolo(),
       onLeave: () => this.leave(), onRestart: () => this.restart(),
       onCloseCraft: () => this.closeCraft(), onCraft: (picked) => this.doCraft(picked),
+      onCloseInv: () => this.closeInv(),
+      onStore: (invIdx, slot) => {
+        const it = this.player.inv[invIdx]; if (!it) return;
+        this.player.inv[invIdx] = null;
+        if (this.isHost) this.director.store(this.me, it, slot); else this.send({ t: 'store', item: it, slot });
+        sfx('loot');
+      },
+      onWithdraw: (idx, slot) => { if (this.isHost) this.director.withdraw(this.me, idx, slot); else this.send({ t: 'withdraw', idx, slot }); },
+      onStorageMove: (a, b) => { if (this.isHost) this.director.moveStorage(a, b); else this.send({ t: 'smove', a, b }); },
+      onDropItem: (invIdx) => {
+        const P = this.player, it = P.inv[invIdx]; if (!it) return;
+        const f = _v.set(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
+        this._drop(it, P.pos.x + f.x * 1.5, P.pos.z + f.z * 1.5); P.inv[invIdx] = null; sfx('throw');
+      },
     });
     this.ui.version(BUILD_ID);
     this._setupNet();
@@ -88,12 +105,14 @@ export class Game {
 
   _resize() { this.renderer.setSize(innerWidth, innerHeight, false); this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); }
   get isHost() { return this.mode === 'solo' || this.mode === 'host'; }
-  get crafting() { return this.ui.crafting; }
+  get crafting() { return this.ui.crafting || this.ui.invOpen; }
 
   // ------------------------------------------------------------ modes
   _begin() {
     this.player = this.player || new Player(this, this.camera);
+    this.player.setColor(PLAYER_COLORS[this.me]);
     this.player.reset();
+    if (this.friendChar) { this.scene.remove(this.friendChar.root); this.friendChar = null; }
     this.ui.showMenu(false);
     this.lastPh = null;
   }
@@ -131,7 +150,17 @@ export class Game {
   // ------------------------------------------------------------ actions (routed to host)
   send(msg) { if (this.net.connected) this.net.send(msg); }
   _hostPlayers() { return this.mode === 'host' ? [this.player.pose(), this.net.connected ? this.friendPose : null] : [this.player.pose()]; }
-  hitZ(h) { if (this.isHost) this.director.hitZ(h, this._hostPlayers()); else this.send({ t: 'hitZ', h }); }
+  hitZ(h) {
+    if (h.k !== 'flame') {
+      // instant local feedback, before the host even answers
+      (this._myHits ||= new Map()).set(h.id, performance.now());
+      const m = this.zModels.get(h.id);
+      if (m) { m.flinch = 0.25; m.flashT = 0.08; this.fx.blood(_v.set(m.x, 1.5 * ZTYPES[m.type].scale, m.z), h.k === 'melee' ? 8 : 4); }
+      this.ui.hitMarker(false);
+      if (h.k === 'melee') this.hitStop = Math.max(this.hitStop || 0, 0.055);
+    }
+    if (this.isHost) this.director.hitZ(h, this._hostPlayers()); else this.send({ t: 'hitZ', h });
+  }
   land(l) { if (this.isHost) this.director.land(l, this._hostPlayers()); else this.send({ t: 'land', l }); }
   place(item, x, z, rot) { if (this.isHost) this.director.place(this.me, item, x, z, rot); else this.send({ t: 'place', item, x, z, rot }); }
   _loot(cid) { if (this.isHost) this.director.loot(this.me, cid); else this.send({ t: 'loot', cid }); }
@@ -155,6 +184,9 @@ export class Game {
     n.on('loot', (m) => this.isHost && this.director.loot(1, m.cid));
     n.on('take', (m) => this.isHost && this.director.take(1, m.gid));
     n.on('drop', (m) => this.isHost && this.director.drop(m.item, m.x, m.z));
+    n.on('store', (m) => this.isHost && this.director.store(1, m.item, m.slot));
+    n.on('withdraw', (m) => this.isHost && this.director.withdraw(1, m.idx, m.slot));
+    n.on('smove', (m) => this.isHost && this.director.moveStorage(m.a, m.b));
     n.on('skip', () => this.isHost && this.director.voteSkip(1));
     n.on('restart', () => this.isHost && this.director.voteRestart(1));
     n.on('revive', () => this.player?.revive());
@@ -199,9 +231,14 @@ export class Game {
         }
         break;
       case 'take':
-        if (e.p === me) { if (!P.addItem(e.item)) { this._drop(e.item, P.pos.x, P.pos.z); this.toast('Inventory full', '#f99'); } else sfx('loot'); }
+        if (e.p === me) {
+          if (e.slot != null && !P.inv[e.slot]) { P.inv[e.slot] = e.item; sfx('loot'); }
+          else if (!P.addItem(e.item)) { this._drop(e.item, P.pos.x, P.pos.z); this.toast('Inventory full', '#f99'); }
+          else sfx('loot');
+        }
         break;
       case 'hurt': if (e.p === me) P.hurt(e.dmg, e.kb); break;
+      case 'deny': if (e.p === me && e.why) this.toast(e.why, '#f99'); break;
       case 'scare': if (e.p === me) this.scare(e.kind === 'lurker'); else this.s3('shriek', e.x, e.z); break;
       case 'shriek': this.s3('shriek', e.x, e.z, 250); break;
       case 'blackout':
@@ -229,7 +266,14 @@ export class Game {
         else this.fx.sparks(_v.set(e.x, 0.5, e.z), 10, 0xff9933);
         if (e.big && Math.hypot(P.pos.x - e.x, P.pos.z - e.z) < 18) P.hurtT = Math.max(P.hurtT, 0.15);
         break;
-      case 'zdie': sfx('zdie', 60); this.fx.blood(_v.set(e.x, 1.2, e.z), 14); { const m = this.zModels.get(e.id); if (m) m.dead = 0.01; } break;
+      case 'zdie': {
+        this.s3('zdie', e.x, e.z, 60);
+        this.fx.blood(_v.set(e.x, 1.2, e.z), 14);
+        const m = this.zModels.get(e.id);
+        if (m && !m.dead) m.die(e.dx, e.dz, e.big, this.fx);
+        if (this._myHits?.get(e.id) > performance.now() - 3000) { this.ui.hitMarker(true); sfx('kill'); this._myHits.delete(e.id); }
+        break;
+      }
       case 'zap': sfx('zap', 80); this.fx.zap(_v.set(e.a[0], 1.3, e.a[1]), _w.set(e.b[0], 1.3, e.b[1])); break;
       case 'night': sfx('night'); this.toast(`🌙 Night ${e.day} — they're coming!`, '#ff8080'); break;
       case 'dawn': if (e.day > 1) { sfx('dawn'); this.toast(`☀ You survived the night! Day ${e.day}`, '#ffe066'); this.toast('A few containers have been restocked', '#ccc'); } break;
@@ -247,6 +291,10 @@ export class Game {
   }
 
   // ------------------------------------------------------------ crafting
+  get nearStorage() { const P = this.player; return P && Math.hypot(STORAGE.x - P.pos.x, STORAGE.z - P.pos.z) < 2.8; }
+  openInv(withStorage = this.nearStorage) { if (document.pointerLockElement) document.exitPointerLock(); this.ui.openInv(this.player, withStorage); }
+  closeInv() { this.ui.closeInv(); if (this.state?.ph !== 'over') this.canvas.requestPointerLock?.(); }
+
   openCraft() { if (document.pointerLockElement) document.exitPointerLock(); this.ui.openCraft(this.player); }
   closeCraft() { this.ui.closeCraft(); this.canvas.requestPointerLock?.(); }
   doCraft(picked) {
@@ -256,7 +304,9 @@ export class Game {
     const it = combine(items);
     for (const i of picked) P.inv[i] = null;
     P.addItem(it);
-    P.sel = P.inv.indexOf(it);
+    const ni = P.inv.indexOf(it);
+    if (ni >= 0 && ni < HOTBAR) P.sel = ni;
+    else if (ni >= HOTBAR) this.toast('Hotbar full: it went into your backpack (Tab)', '#ccc');
     const a = analyze(it.parts);
     sfx('craft');
     this.toast(`Crafted: ${a.name}!`, '#f2c230');
@@ -267,7 +317,8 @@ export class Game {
   // ------------------------------------------------------------ frame
   frame() {
     const now = performance.now();
-    const dt = this.fixedDt ?? Math.min((now - this._last) / 1000, 0.05);
+    let dt = this.fixedDt ?? Math.min((now - this._last) / 1000, 0.05);
+    if (this.hitStop > 0) { this.hitStop -= dt; dt *= 0.08; }
     this._last = now; this.t += dt;
     if (this.mode === 'menu') { this._menuCam(dt); this.pressed.clear(); this.mouse.pressed = false; return; }
     const P = this.player;
@@ -371,6 +422,7 @@ export class Game {
   _interact(s, canAct, dt) {
     const P = this.player, f = this.friendPose;
     this.prompt = '';
+    if (this.ui.invOpen) { if (this.pressed.has('KeyE') || this.pressed.has('Escape')) this.closeInv(); else this.ui.renderInv(s); return; }
     if (this.crafting) { if (this.pressed.has('KeyE') || this.pressed.has('Escape')) this.closeCraft(); return; }
     if (!canAct || P.down) return;
     const ePressed = this.pressed.has('KeyE');
@@ -387,6 +439,11 @@ export class Game {
     if (Math.hypot(BENCH.x - P.pos.x, BENCH.z - P.pos.z) < 2.8) {
       this.prompt = '<b>E</b> use workbench';
       if (ePressed) this.openCraft();
+      return;
+    }
+    if (this.nearStorage) {
+      this.prompt = '<b>E</b> open base storage (shared)';
+      if (ePressed) this.openInv(true);
       return;
     }
     const looted = new Set(s.looted);
@@ -407,19 +464,19 @@ export class Game {
     this.town.setLooted(new Set(s.looted));
     const seen = new Set();
     for (const e of s.z) {
-      const [id, ti, x, z, yaw, , f] = e;
+      const [id, ti, x, z, yaw, hp, f] = e;
       seen.add(id);
       let m = this.zModels.get(id);
       if (!m) { m = new ZombieModel(ZT[ti]); m.id = id; m.x = x; m.z = z; this.scene.add(m.root); this.zModels.set(id, m); }
       if (m.dead) continue;
       if (f & 16) m.flashT = 0.1;
-      m.update(dt, { x, z, yaw, f }, this.t);
+      m.update(dt, { x, z, yaw, f, hp }, this.t, this.fx);
       if (f & 1 && Math.random() < dt * 6) this.fx.fire(_v.set(m.x, 1.5, m.z));
       if (Math.random() < dt * 0.08) this.s3('groan', m.x, m.z, 300, 35);
     }
     for (const [id, m] of this.zModels) {
-      if (!seen.has(id) && !m.dead) m.dead = 0.01;
-      if (m.dead && !m.update(dt, null, this.t)) { this.scene.remove(m.root); this.zModels.delete(id); }
+      if (!seen.has(id) && !m.dead) m.die(0, 0, false, this.fx);
+      if (m.dead && !m.update(dt, null, this.t, this.fx)) { this.scene.remove(m.root); this.zModels.delete(id); }
     }
     this._syncMap(this.stMeshes, s.st, (st) => this._structureMesh(st), (m, st) => {
       if (st.form === 'trap' && m.userData.spin) m.userData.spin.rotation.y += dt * (st.spin ? 25 : 2);
@@ -490,32 +547,15 @@ export class Game {
 
   _friendModel(dt) {
     const f = this.friendPose;
-    if (!this.friendMesh) {
-      const g = new THREE.Group();
-      const col = this.me === 0 ? 0x4ea8de : 0xf4a261;
-      const mat = new THREE.MeshStandardMaterial({ color: col, flatShading: true });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.4), mat); body.position.y = 1.15; g.add(body);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), new THREE.MeshStandardMaterial({ color: 0xf1c27d, flatShading: true })); head.position.y = 1.85; g.add(head);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.55), mat); cap.position.set(0, 2.1, 0.05); g.add(cap);
-      for (const x of [-0.18, 0.18]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.24), new THREE.MeshStandardMaterial({ color: 0x33415c })); l.position.set(x, 0.35, 0); g.add(l); }
-      const hand = new THREE.Group(); hand.position.set(-0.45, 1.3, 0.2); g.add(hand);
-      g.userData.hand = hand;
-      g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-      this.scene.add(g); this.friendMesh = g;
+    if (!this.friendChar) {
+      this.friendChar = new Character(PLAYER_COLORS[1 - this.me], 'Friend');
+      this.scene.add(this.friendChar.root);
     }
-    const g = this.friendMesh;
-    g.visible = !!f;
+    const c = this.friendChar;
+    c.root.visible = !!f;
     if (!f) return;
-    g.position.set(f.x, f.y, f.z);
-    g.rotation.set(f.down ? -Math.PI / 2.2 : 0, f.yaw + Math.PI, 0);
-    if (f.down) g.position.y = 0.3;
-    const hand = g.userData.hand;
-    if (hand.userData.sig !== f.held) {
-      hand.userData.sig = f.held; hand.clear();
-      if (f.held) { const im = itemMesh(f.held.split(','), 1.1); im.rotation.x = -0.6; hand.add(im); }
-    }
-    hand.rotation.x = f.sw ? Math.sin(this.t * 20) * 0.9 : 0;
-    if (f.fl && f.held) { const d = _v.set(-Math.sin(f.yaw), 0, -Math.cos(f.yaw)); this.fx.flame(_w.set(f.x + d.x, f.y + 1.3, f.z + d.z), d); }
+    c.update(dt, f, this.t);
+    if (f.fl && f.held) { const d = _v.set(-Math.sin(f.yaw), 0, -Math.cos(f.yaw)); this.fx.flame(_w.set(f.x + d.x * 1.2, f.y + 1.35, f.z + d.z * 1.2), d); }
   }
 
   _clearWorld() {

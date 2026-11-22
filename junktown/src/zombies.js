@@ -74,13 +74,46 @@ export class ZombieModel {
   }
 
   /** s = snapshot entry */
-  update(dt, s, t) {
+  /** knocked down: fall away from the hit, maybe lose the head on a big hit */
+  die(dx, dz, big, fx) {
+    this.dead = 0.01;
+    this.fallYaw = dx || dz ? Math.atan2(dx, dz) : this.yaw + Math.PI;
+    this.slide = { x: dx * 5, z: dz * 5 };
+    this.root.rotation.order = 'YXZ';
+    if (big && fx && !ZTYPES[this.type].boss) {
+      fx.piece(this.head, new THREE.Vector3(dx * 6 + (Math.random() - 0.5) * 3, 7 + Math.random() * 3, dz * 6 + (Math.random() - 0.5) * 3), 14);
+      fx.blood(this.root.position.clone().setY(2), 18);
+    }
+  }
+
+  /** knock an arm off when they're badly hurt */
+  _loseArm(arm, fx) {
+    const m = arm.children[0];
+    if (!m || !fx) return;
+    const side = arm === this.armL ? 1 : -1;
+    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+    fx.piece(m, new THREE.Vector3(side * c * 4 + (Math.random() - 0.5) * 2, 4 + Math.random() * 2, -side * sn * 4 + (Math.random() - 0.5) * 2), 12);
+    fx.blood(this.root.position.clone().setY(1.6 * ZTYPES[this.type].scale), 10);
+  }
+
+  update(dt, s, t, fx) {
     if (this.dead) {
       this.dead += dt;
-      this.root.rotation.x = Math.min(Math.PI / 2, this.dead * 5) * -1;
-      this.root.position.y = -Math.max(0, this.dead - 1) * 1.2;
-      return this.dead < 2.2;
+      const fall = Math.min(1, this.dead * 3.5);
+      this.root.rotation.set(fall * (Math.PI / 2 - 0.08), this.fallYaw, 0);
+      this.root.position.x += this.slide.x * dt; this.root.position.z += this.slide.z * dt;
+      this.slide.x *= Math.exp(-6 * dt); this.slide.z *= Math.exp(-6 * dt);
+      this.legL.rotation.x = -fall * 0.5; this.legR.rotation.x = fall * 0.3;
+      this.root.position.y = -Math.max(0, this.dead - 1.6) * 1.2;
+      return this.dead < 2.8;
     }
+    // hit reactions
+    if (s.hp != null) {
+      const boss = ZTYPES[this.type].boss;
+      if (!this.lostA && s.hp <= (boss ? 35 : 55)) { this.lostA = true; this._loseArm(Math.random() < 0.5 ? this.armL : this.armR, fx); }
+      if (!this.lostB && !boss && s.hp <= 22) { this.lostB = true; this._loseArm(this.armL.children[0] ? this.armL : this.armR, fx); }
+    }
+    this.flinch = Math.max(0, (this.flinch || 0) - dt);
     const k = 1 - Math.exp(-dt * 12);
     const d = Math.hypot(s.x - this.x, s.z - this.z);
     if (d > 6) { this.x = s.x; this.z = s.z; } else { this.x += (s.x - this.x) * k; this.z += (s.z - this.z) * k; }
@@ -98,11 +131,17 @@ export class ZombieModel {
     const attacking = fl & 8;
     this.armL.rotation.x = attacking ? -0.6 + Math.sin(t * 18) * 0.6 : -0.15 + Math.sin(this.phase * 0.5) * 0.15;
     this.armR.rotation.x = attacking ? -0.6 + Math.cos(t * 18) * 0.6 : -0.15 - Math.sin(this.phase * 0.5) * 0.15;
-    this.body.rotation.z = Math.sin(this.phase * 0.5) * 0.08 + (stunned ? Math.sin(t * 40) * 0.15 : 0);
+    const staggered = fl & 128;
+    const fk = this.flinch / 0.25;
+    this.body.rotation.z = Math.sin(this.phase * 0.5) * 0.08 + (stunned ? Math.sin(t * 40) * 0.15 : 0) + (staggered ? Math.sin(t * 22) * 0.12 : 0);
+    this.body.rotation.x = -0.55 * fk * fk + (staggered ? -0.12 : 0);
+    this.head.rotation.x = -0.6 * fk;
+    if (fk > 0) { this.armL.rotation.x -= 0.8 * fk; this.armR.rotation.x -= 0.8 * fk; }
     this.fire.visible = !!(fl & 1); if (fl & 1) this.fire.scale.set(1 + Math.sin(t * 20) * 0.15, 1 + Math.sin(t * 13) * 0.25, 1);
     this.zap.visible = !!stunned; if (stunned) this.zap.rotation.set(t * 9, t * 7, 0);
     this.goo.visible = !!(fl & 4);
     if (this.belly) this.belly.scale.setScalar(1 + Math.sin(t * 8) * 0.08);
+    if (fl & 16 && this.flinch < 0.1) this.flinch = 0.25;
     this.flashT -= dt;
     this.head.material = this.flashT > 0 ? mat(0xffffff) : mat(ZTYPES[this.type].skin);
     return true;
