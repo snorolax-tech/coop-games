@@ -8,7 +8,7 @@ import { Character, PLAYER_COLORS } from './character.js';
 import { ZombieModel, ZTYPES } from './zombies.js';
 import { FX } from './fx.js';
 import { UI } from './ui.js';
-import { analyze, itemMesh, makeItem, combine, MAX_PARTS } from './items.js';
+import { analyze, itemMesh, makeItem, combine, MAX_PARTS, repairPair } from './items.js';
 import { sfx, sfx3d, unlockAudio } from './audio.js';
 
 // eslint-disable-next-line no-undef
@@ -81,7 +81,7 @@ export class Game {
     this.ui = new UI(uiRoot, {
       onHost: () => this.startHost(), onJoin: (c) => this.joinGame(c), onSolo: () => this.startSolo(),
       onLeave: () => this.leave(), onRestart: () => this.restart(),
-      onCloseCraft: () => this.closeCraft(), onCraft: (picked) => this.doCraft(picked),
+      onCloseCraft: () => this.closeCraft(), onCraft: (picked) => this.doCraft(picked), onRepair: (picked) => this.doRepair(picked),
       onCloseInv: () => this.closeInv(),
       onStore: (invIdx, slot) => {
         const it = this.player.inv[invIdx]; if (!it) return;
@@ -221,6 +221,24 @@ export class Game {
     arm.lookAt(P.pos.x, 0.9, P.pos.z);
     this.scene.add(arm);
   }
+  /** show the arm holding your friend for a few seconds */
+  _friendGrabbed(e) {
+    const f = this.friendPose; if (!f) return;
+    this.s3('growl', e.x, e.z);
+    const arm = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0x7fa36a, flatShading: true });
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1), skin); fore.position.z = 0.5; arm.add(fore);
+    arm.position.set(e.x, 1.5, e.z); this.scene.add(arm);
+    const t0 = this.t;
+    const tick = () => {
+      if (this.t - t0 > 4 || !this.friendPose) { this.scene.remove(arm); return; }
+      const fp = this.friendPose, d = Math.hypot(fp.x - e.x, fp.z - e.z);
+      arm.lookAt(fp.x, 1, fp.z); arm.scale.z = Math.max(0.3, d - 0.3);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
   _updateGrab(dt) {
     const G = this.grabbed, P = this.player;
     G.t += dt;
@@ -308,6 +326,7 @@ export class Game {
       case 'grab':
         this.s3('lid', e.x, e.z);
         if (e.p === me) this._startGrab(e);
+        else this._friendGrabbed(e);
         break;
       case 'boom':
         sfx(e.big ? 'boom' : 'throw');
@@ -347,6 +366,19 @@ export class Game {
 
   openCraft() { if (document.pointerLockElement) document.exitPointerLock(); this.ui.openCraft(this.player); }
   closeCraft() { this.ui.closeCraft(); this.canvas.requestPointerLock?.(); }
+  doRepair(picked) {
+    const P = this.player;
+    const items = picked.map((i) => P.inv[i]);
+    const r = items.length === 2 && repairPair(items[0], items[1]);
+    if (!r) return;
+    r.target.uses += r.amount;
+    P.inv[P.inv.indexOf(r.mat)] = null;
+    sfx('craft');
+    this.toast(`${r.label} on your ${analyze(r.target.parts).name}`, '#7fd3ff');
+    this.ui.picked = [];
+    this.ui.renderCraft();
+  }
+
   doCraft(picked) {
     const P = this.player;
     const items = picked.map((i) => P.inv[i]).filter(Boolean);

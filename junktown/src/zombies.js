@@ -2,18 +2,18 @@
 import * as THREE from 'three';
 
 export const ZTYPES = {
-  walker:   { hp: 60, speed: 2.8, dmg: 12, reach: 1.5, scale: 1, skin: 0x7fa36a, shirt: 0x5c6b7a, from: 1 },
-  runner:   { hp: 35, speed: 5.7, dmg: 9, reach: 1.4, scale: 0.9, skin: 0x9bb88a, shirt: 0x9d4e3c, from: 2 },
-  brute:    { hp: 240, speed: 1.8, dmg: 26, reach: 2.0, scale: 1.55, skin: 0x5f7d4f, shirt: 0x3a3a3a, from: 3, armor: 0.5 },
-  exploder: { hp: 40, speed: 3.3, dmg: 0, reach: 1.8, scale: 1.15, skin: 0xa0b060, shirt: 0xd9b23a, from: 4, boom: { radius: 4.5, dmg: 35 } },
+  walker:   { hp: 55, speed: 2.7, dmg: 9, reach: 1.5, scale: 1, skin: 0x7fa36a, shirt: 0x5c6b7a, from: 1 },
+  runner:   { hp: 32, speed: 5.4, dmg: 7, reach: 1.4, scale: 0.9, skin: 0x9bb88a, shirt: 0x9d4e3c, from: 2 },
+  brute:    { hp: 220, speed: 1.8, dmg: 20, reach: 2.0, scale: 1.55, skin: 0x5f7d4f, shirt: 0x3a3a3a, from: 3, armor: 0.5 },
+  exploder: { hp: 40, speed: 3.3, dmg: 0, reach: 1.8, scale: 1.15, skin: 0xa0b060, shirt: 0xd9b23a, from: 4, boom: { radius: 4.5, dmg: 28 } },
   // only moves while nobody is looking at it
-  stalker:  { hp: 90, speed: 9, dmg: 30, reach: 1.6, scale: 1.3, skin: 0xd9d6cc, shirt: 0x141414, from: 2, stalker: true },
+  stalker:  { hp: 80, speed: 8.5, dmg: 22, reach: 1.6, scale: 1.3, skin: 0xd9d6cc, shirt: 0x141414, from: 2, stalker: true },
   // bursts out of containers you search
-  lurker:   { hp: 30, speed: 6.2, dmg: 10, reach: 1.4, scale: 0.95, skin: 0xb5b89a, shirt: 0x3a3226, from: 1 },
+  lurker:   { hp: 28, speed: 6, dmg: 7, reach: 1.4, scale: 0.95, skin: 0xb5b89a, shirt: 0x3a3226, from: 1 },
   // bosses
-  butcher:  { hp: 1400, speed: 2.4, dmg: 32, reach: 2.9, scale: 2.5, skin: 0x8a6a5a, shirt: 0xc8c2b0, boss: 'THE BUTCHER', armor: 0.8 },
-  mother:   { hp: 1800, speed: 1.4, dmg: 28, reach: 2.8, scale: 2.3, skin: 0x7a9a4a, shirt: 0x4a3a2a, boss: 'THE MOTHER' },
-  hollow:   { hp: 2200, speed: 3.4, dmg: 35, reach: 2.5, scale: 2.1, skin: 0xf0f0ea, shirt: 0x050505, boss: 'THE HOLLOW' },
+  butcher:  { hp: 1200, speed: 2.4, dmg: 26, reach: 2.9, scale: 2.5, skin: 0x8a6a5a, shirt: 0xc8c2b0, boss: 'THE BUTCHER', armor: 0.8 },
+  mother:   { hp: 1500, speed: 1.4, dmg: 22, reach: 2.8, scale: 2.3, skin: 0x7a9a4a, shirt: 0x4a3a2a, boss: 'THE MOTHER' },
+  hollow:   { hp: 1900, speed: 3.4, dmg: 28, reach: 2.5, scale: 2.1, skin: 0xf0f0ea, shirt: 0x050505, boss: 'THE HOLLOW' },
 };
 
 const mats = new Map();

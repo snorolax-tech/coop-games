@@ -135,3 +135,6 @@ input { font: inherit; font-size: 20px; padding: 10px; width: 120px; border-radi
 .islot.picked { border-color: #f2c230; box-shadow: 0 0 0 2px #f2c230 inset; background: rgba(90,70,10,.7); }
 .invcols { flex-wrap: wrap; }
 .idetail { flex: 1 1 220px; }
+
+.rep { background: #7fd3ff; box-shadow: 0 4px 0 #3a7fa0; }
+.reppv { margin-top: 10px; padding: 8px; border-radius: 8px; background: rgba(127,211,255,.12); border: 1px solid #7fd3ff; font-size: 14px; }
