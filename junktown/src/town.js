@@ -121,7 +121,10 @@ export class Town {
     scene.fog = new THREE.Fog(0x9fc4e0, 40, 140);
     scene.background = new THREE.Color(0x9fc4e0);
     this.night = 0;
+    this.windows = [];
+    this.alarms = new Map(); // container id -> seconds left
     this._build();
+    this._windowFace();
   }
 
   _build() {
@@ -149,7 +152,10 @@ export class Town {
       // door + windows on both long sides
       for (const sd of [-1, 1]) {
         box(1.4, 2.4, 0.1, 0x5c3d2e, 0, 1.2, sd * (b.d / 2 + 0.03), g);
-        for (const wx of [-b.w / 3, b.w / 3]) box(1.6, 1.2, 0.1, 0x22313f, wx, 2.6, sd * (b.d / 2 + 0.03), g, { emissive: 0x000000 });
+        for (const wx of [-b.w / 3, b.w / 3]) {
+          box(1.6, 1.2, 0.1, 0x22313f, wx, 2.6, sd * (b.d / 2 + 0.03), g, { emissive: 0x000000 });
+          this.windows.push({ x: b.x + wx, y: 2.6, z: b.z + sd * (b.d / 2 + 0.03), nz: sd, cd: 0 });
+        }
       }
       if (b.kind === 'store') box(10, 1.2, 0.3, 0xd62828, 0, b.h - 0.8, -(b.d / 2 + 0.2), g);
       if (b.kind === 'garage') box(6, 3.5, 0.1, 0x6c757d, 0, 1.75, -(b.d / 2 + 0.03), g);
@@ -217,6 +223,12 @@ export class Town {
         box(2.0, 0.6, 1.72, 0x22313f, -0.2, 1.55, 0, g);
         for (const [x, z] of [[-1.4, 1], [1.4, 1], [-1.4, -1], [1.4, -1]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), mat(0x111111)); w.rotation.x = Math.PI / 2; w.position.set(x, 0.4, z * 0.95); g.add(w); }
         g.userData.lid = box(0.9, 0.1, 1.6, col, 1.75, 1.25, 0, g);
+        // head + tail lights that flash when the alarm goes off
+        g.userData.lights = [];
+        for (const [x, z, c2] of [[-2.11, 0.65, 0xfff2c0], [-2.11, -0.65, 0xfff2c0], [2.11, 0.65, 0xff2020], [2.11, -0.65, 0xff2020]]) {
+          const l = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.35), new THREE.MeshBasicMaterial({ color: 0x333333 }));
+          l.position.set(x, 0.85, z); l.userData.on = c2; g.add(l); g.userData.lights.push(l);
+        }
         break;
       }
       case 'dumpster': box(3.2, 1.6, 1.8, 0x2d6a4f, 0, 0.8, 0, g); g.userData.lid = box(3.3, 0.12, 1.9, 0x1b4332, 0, 1.66, 0, g); break;
@@ -267,8 +279,59 @@ export class Town {
     if (focus) { this.sun.position.set(focus.x + 30, 60, focus.z + 20); this.sun.target.position.set(focus.x, 0, focus.z); }
   }
 
+  /** a zombie face + hands that slam against a window, then slide away */
+  _windowFace() {
+    const g = this.face = new THREE.Group(); g.visible = false; this.scene.add(g);
+    const skin = new THREE.MeshStandardMaterial({ color: 0x8fa77a, flatShading: true, roughness: 0.9, emissive: 0x111a08 });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.65, 0.3), skin); g.add(head);
+    const black = new THREE.MeshBasicMaterial({ color: 0x000000 }), glow = new THREE.MeshBasicMaterial({ color: 0xffee33 });
+    for (const x of [-0.14, 0.14]) { const e = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.02), black); e.position.set(x, 0.08, 0.16); g.add(e); const p = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.02), glow); p.position.set(x, 0.08, 0.17); g.add(p); }
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.02), black); mouth.position.set(0, -0.16, 0.16); g.add(mouth);
+    for (const x of [-0.55, 0.55]) { const h = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.4, 0.08), skin); h.position.set(x, 0.15, 0.1); h.rotation.z = x > 0 ? -0.3 : 0.3; g.add(h); }
+    this.faceT = 0;
+  }
+
+  /** returns true if a face appeared (caller plays the sound) */
+  tryWindowScare(px, pz, yaw, night) {
+    if (this.faceT > 0) return null;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const cands = this.windows.filter((w) => {
+      if (w.cd > 0) return false;
+      const dx = w.x - px, dz = w.z - pz, d = Math.hypot(dx, dz);
+      if (d < 3.5 || d > 10) return false;
+      if ((dx * fx + dz * fz) / d < 0.55) return false;                // must be in view
+      return (pz - w.z) * w.nz > 0;                                    // must be outside the house, facing the glass
+    });
+    if (!cands.length) return null;
+    const w = cands[Math.floor(Math.random() * cands.length)];
+    w.cd = 90;
+    this.face.position.set(w.x, w.y, w.z + w.nz * 0.12);
+    this.face.rotation.set(0, w.nz > 0 ? 0 : Math.PI, 0);
+    this.face.visible = true; this.faceT = 3.2; this.faceBase = w.y;
+    return w;
+  }
+
+  alarm(cid, t) { this.alarms.set(cid, t); }
+
   update(dt, t) {
     this.flame.scale.set(1 + Math.sin(t * 13) * 0.12, 1 + Math.sin(t * 9) * 0.2, 1);
+    for (const w of this.windows) w.cd -= dt;
+    if (this.faceT > 0) {
+      this.faceT -= dt;
+      // slam in, press against the glass, then slowly slide down out of sight
+      const k = 3.2 - this.faceT;
+      this.face.scale.setScalar(k < 0.08 ? 0.6 + k * 5 : 1 + Math.max(0, 0.1 - (k - 0.08)) * 0.5);
+      this.face.position.y = this.faceBase - Math.max(0, k - 1.6) * 0.9;
+      this.face.children[0].rotation.z = Math.sin(t * 30) * 0.03;
+      if (this.faceT <= 0) this.face.visible = false;
+    }
+    for (const [cid, left] of this.alarms) {
+      const g = this.containerMeshes.get(cid);
+      const nl = left - dt;
+      const on = nl > 0 && Math.floor(t * 4) % 2 === 0;
+      for (const l of g.userData.lights || []) l.material.color.setHex(on ? l.userData.on : 0x333333);
+      if (nl <= 0) this.alarms.delete(cid); else this.alarms.set(cid, nl);
+    }
     for (const g of this.containerMeshes.values()) if (g.userData.marker.visible) { g.userData.marker.rotation.y = t * 2; g.userData.marker.position.y += Math.sin(t * 3) * 0.002; }
   }
 }

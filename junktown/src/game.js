@@ -134,6 +134,7 @@ export class Game {
     } catch (e) { this.ui.status(e.message, true); }
   }
   leave(reason = '') {
+    if (this.grabArm) { this.scene.remove(this.grabArm); this.grabArm = null; } this.grabbed = null;
     if (this.net.online) this.net.leave();
     this.mode = 'menu'; this.director = null; this.state = this.netState = null;
     this.friendPose = this.friendTarget = null;
@@ -204,6 +205,45 @@ export class Game {
   /** world-positioned sound */
   s3(name, x, z, throttle = 0, range = 60) { const P = this.player; if (P) sfx3d(name, x, z, P.pos.x, P.pos.z, P.yaw, throttle, range); }
 
+  /** a hand bursts out of the dumpster and holds you. mash E to get free */
+  _startGrab(e) {
+    const P = this.player;
+    this.scare(true);
+    sfx('growl');
+    this.grabbed = { t: 0, presses: 0, need: 9, x: e.x, z: e.z, hurtT: 0.5 };
+    const arm = this.grabArm = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0x7fa36a, flatShading: true, roughness: 0.9 });
+    const fore = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.8), skin); fore.position.z = 0.9; arm.add(fore);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.3), skin); hand.position.z = 1.9; arm.add(hand);
+    for (let i = 0; i < 4; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.22), skin); f.position.set(-0.11 + i * 0.075, -0.04, 2.12); f.rotation.x = 0.5; arm.add(f); }
+    const dl = Math.hypot(P.pos.x - e.x, P.pos.z - e.z) || 1;
+    arm.position.set(e.x + (P.pos.x - e.x) / dl * 0.6, 1.55, e.z + (P.pos.z - e.z) / dl * 0.6);
+    arm.lookAt(P.pos.x, 0.9, P.pos.z);
+    this.scene.add(arm);
+  }
+  _updateGrab(dt) {
+    const G = this.grabbed, P = this.player;
+    G.t += dt;
+    const want = Math.atan2(-(G.x - P.pos.x), -(G.z - P.pos.z));
+    P.yaw += Math.atan2(Math.sin(want - P.yaw), Math.cos(want - P.yaw)) * Math.min(1, dt * 5);
+    P.pitch += (-0.15 - P.pitch) * Math.min(1, dt * 5);
+    const d = Math.hypot(G.x - P.pos.x, G.z - P.pos.z);
+    if (d > 2.9) { P.pos.x += (G.x - P.pos.x) / d * dt * 2; P.pos.z += (G.z - P.pos.z) / d * dt * 2; }
+    this.grabArm.lookAt(P.pos.x, 0.9 + Math.sin(this.t * 25) * 0.08, P.pos.z);
+    this.grabArm.scale.z = Math.min(1.2, Math.max(0.3, (d - 0.9) / 2.1));
+    G.hurtT -= dt;
+    if (G.hurtT <= 0) { G.hurtT = 0.5; P.hurt(3); }
+    if (this.pressed.has('KeyE')) { G.presses++; sfx('breakfree', 40); P.kick = -0.03; }
+    const n = Math.min(G.need, G.presses);
+    this.prompt = `<span style="color:#ff6060;font-weight:900">IT'S GOT YOU! MASH <b>E</b></span> ${'▮'.repeat(n)}${'▯'.repeat(G.need - n)}`;
+    const done = G.presses >= G.need, timeout = G.t > 7;
+    if (done || timeout || P.down) {
+      if (timeout && !P.down) { P.hurt(18); this.toast('It bit you before you got away!', '#ff6060'); }
+      else if (done) { sfx('breakfree'); this.toast('You broke free!', '#9be564'); }
+      this.scene.remove(this.grabArm); this.grabArm = null; this.grabbed = null;
+    }
+  }
+
   scare(force) {
     const now = performance.now();
     if (!force && now - (this._lastScare || 0) < 6000) return;
@@ -259,6 +299,16 @@ export class Game {
       case 'blink': this.s3('blink', e.x, e.z); if (e.p === me) this.s3('whisper', e.x, e.z); break;
       case 'scream': this.s3('scream', e.x, e.z, 0, 90); break;
       case 'stun': if (e.p === me) { P.stunT = e.t; P.hurtT = 0.4; } break;
+      case 'alarm': {
+        this.town.alarm(e.cid, 9);
+        for (let i = 0; i < 14; i++) setTimeout(() => this.s3('horn', e.x, e.z, 0, 90), i * 640);
+        this.toast('🚨 You set off a car alarm! They heard that…', '#ff6a4a');
+        break;
+      }
+      case 'grab':
+        this.s3('lid', e.x, e.z);
+        if (e.p === me) this._startGrab(e);
+        break;
       case 'boom':
         sfx(e.big ? 'boom' : 'throw');
         if (e.big) this.fx.explosion(_v.set(e.x, 1, e.z), Math.min(2, e.r / 3));
@@ -346,7 +396,7 @@ export class Game {
 
     // player
     const walls = (s?.st || []).filter((q) => q.form === 'wall').map(wallBox);
-    const canAct = !this.crafting && s && s.ph !== 'over';
+    const canAct = !this.crafting && !this.grabbed && s && s.ph !== 'over';
     const k = this.keys;
     const inp = {
       mx: canAct ? (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) : 0,
@@ -394,6 +444,15 @@ export class Game {
       if (s.t <= 10 && Math.ceil(prev) !== Math.ceil(s.t) && s.t > 0) sfx('tick10');
       this._prevT = s.t;
     } else this._prevT = null;
+    // faces slamming against windows as you walk past houses
+    this._winT = (this._winT ?? 20) - dt;
+    if (this._winT <= 0 && !P.down) {
+      this._winT = 1;
+      if (Math.random() < (s.ph === 'night' ? 0.3 : 0.12)) {
+        const w = this.town.tryWindowScare(P.pos.x, P.pos.z, P.yaw);
+        if (w) { this._winT = 35 + Math.random() * 30; this.s3('bang', w.x, w.z, 0, 40); P.kick = -0.05; P.hurtT = Math.max(P.hurtT, 0.12); }
+      }
+    }
     if (s.ph !== 'night' && !s.z.length) return;
     // heartbeat when something is close
     let near = 1e9;
@@ -422,6 +481,7 @@ export class Game {
   _interact(s, canAct, dt) {
     const P = this.player, f = this.friendPose;
     this.prompt = '';
+    if (this.grabbed) { this._updateGrab(dt); return; }
     if (this.ui.invOpen) { if (this.pressed.has('KeyE') || this.pressed.has('Escape')) this.closeInv(); else this.ui.renderInv(s); return; }
     if (this.crafting) { if (this.pressed.has('KeyE') || this.pressed.has('Escape')) this.closeCraft(); return; }
     if (!canAct || P.down) return;

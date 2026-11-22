@@ -98,6 +98,11 @@ export function sfx(name, throttle = 0) {
       case 'snap': noise(0.08, 0.6, 2200, 3); tone(500, 0.06, 'square', 0.25, -300); noise(0.3, 0.3, 600, 1, 0.05); break;
       case 'marker': tone(1400, 0.04, 'square', 0.08); break;
       case 'kill': tone(900, 0.06, 'square', 0.12); tone(1300, 0.08, 'square', 0.1, 0, 0.05); break;
+      case 'horn': tone(392, 0.32, 'square', 0.22); tone(466, 0.32, 'square', 0.18); break;
+      case 'lid': tone(70, 0.25, 'square', 0.5, -30); noise(0.3, 0.6, 900, 0.7); noise(0.15, 0.4, 3000, 2); break;
+      case 'growl': tone(80, 1.2, 'sawtooth', 0.3, -20); tone(110, 1, 'square', 0.12, -40); noise(1, 0.3, 300, 0.6); break;
+      case 'bang': noise(0.12, 0.8, 600, 0.6); tone(60, 0.25, 'sine', 0.6, -20); noise(0.4, 0.25, 4000, 3, 0.02); tone(240, 0.5, 'sawtooth', 0.12, -120, 0.1); break;
+      case 'breakfree': noise(0.2, 0.4, 1500, 1); tone(300, 0.2, 'square', 0.15, 300); break;
       case 'click': tone(800, 0.04, 'square', 0.1); break;
     }
   } catch { /* audio not available */ }
