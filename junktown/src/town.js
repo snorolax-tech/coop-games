@@ -12,19 +12,19 @@ export const BASE = { x: 0, z: 0 };
 // [item, first day it can show up, weight]. Good stuff is rare and only appears on later days.
 const LOOT = {
   toolbox: [['nails', 1, 3], ['wire', 1, 3], ['tape', 1, 3], ['scrap', 1, 3], ['pipe', 1, 2], ['chain', 1, 2], ['battery', 2, 2], ['spring', 2, 2], ['drill', 3, 1], ['sawblade', 3, 1], ['carbatt', 4, 1]],
-  kitchen: [['bottle', 1, 4], ['pan', 1, 3], ['glue', 1, 2], ['knife', 1, 2], ['alarm', 1, 2], ['bleach', 2, 2], ['lighter', 2, 2], ['fan', 2, 1], ['machete', 3, 1]],
-  car: [['rope', 1, 3], ['scrap', 1, 3], ['tape', 1, 2], ['flashlight', 1, 2], ['bat', 2, 1], ['spring', 2, 1], ['gascan', 2, 1], ['carbatt', 3, 1]],
+  kitchen: [['bandage', 1, 1], ['bottle', 1, 4], ['pan', 1, 3], ['glue', 1, 2], ['knife', 1, 2], ['alarm', 1, 2], ['bleach', 2, 2], ['lighter', 2, 2], ['fan', 2, 1], ['machete', 3, 1]],
+  car: [['rope', 1, 3], ['scrap', 1, 3], ['tape', 1, 2], ['flashlight', 1, 2], ['bandage', 1, 1], ['bat', 2, 1], ['spring', 2, 1], ['gascan', 2, 1], ['carbatt', 3, 1]],
   dumpster: [['scrap', 1, 4], ['bottle', 1, 4], ['brick', 1, 3], ['plank', 1, 3], ['bucket', 1, 2], ['nails', 1, 2], ['chain', 2, 1], ['fence', 2, 1]],
   gas: [['bottle', 1, 3], ['lighter', 1, 2], ['flashlight', 1, 2], ['gascan', 2, 2], ['firework', 3, 1], ['propane', 4, 1]],
   shed: [['rope', 1, 3], ['bucket', 1, 3], ['plank', 1, 3], ['rake', 1, 2], ['fence', 2, 2], ['spring', 2, 1], ['fan', 2, 1], ['mowblade', 3, 1], ['magnet', 4, 1]],
-  medicine: [['pills', 1, 4], ['bandage', 1, 2], ['medkit', 3, 1]],
+  medicine: [['pills', 1, 4], ['bandage', 1, 3], ['medkit', 2, 1]],
   store: [['alarm', 1, 2], ['glue', 1, 2], ['battery', 1, 2], ['flashlight', 1, 2], ['bat', 2, 1], ['bleach', 2, 1], ['bowling', 2, 1], ['firework', 3, 1], ['magnet', 4, 1], ['propane', 5, 1]],
 };
 export const CONTAINER_NAMES = { toolbox: 'Toolbox', kitchen: 'Kitchen Cabinet', car: 'Car Trunk', dumpster: 'Dumpster',
   gas: 'Gas Station Shelf', shed: 'Garden Shed', medicine: 'Medicine Cabinet', store: 'Store Shelf', stash: 'Base Stash' };
 
 export function rollLoot(type, day = 1, rng = Math.random) {
-  if (type === 'stash') return ['plank', 'tape'];
+  if (type === 'stash') return ['plank', 'tape', 'bandage'];
   if (rng() < 0.22) return []; // nothing useful
   const t = LOOT[type].filter(([, d]) => d <= day);
   const total = t.reduce((a, [, , w]) => a + w, 0);

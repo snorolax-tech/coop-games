@@ -77,7 +77,7 @@ export class UI {
 
     // inventory screen
     this.inv = h('div', 'invp hidden', `
-      <div class="ctitle">🎒 INVENTORY <small>drag items to move them · right-click to drop on the ground · Tab / E to close</small></div>
+      <div class="ctitle">🎒 INVENTORY <small>drag items to move them (or click one, then click where it goes) · right-click or drag off the window to drop · Tab / E to close</small></div>
       <div class="invcols">
         <div class="invleft">
           <div class="ilabel">Hotbar (1–0)</div><div class="igrid hot"></div>
@@ -172,8 +172,16 @@ export class UI {
 
   // ------------------------------------------------------------ inventory screen
   get invOpen() { return !this.inv.classList.contains('hidden'); }
-  openInv(player, withStorage) { this.player = player; this.withStorage = withStorage; this.inv.classList.remove('hidden'); this._invSig = null; this.detailItem = null; }
-  closeInv() { this.inv.classList.add('hidden'); }
+  openInv(player, withStorage) {
+    this.player = player; this.withStorage = withStorage; this.inv.classList.remove('hidden');
+    this._invSig = null; this._shownDetail = null; this.pickedSlot = null; this.drag = null;
+    if (!this._invHooked) {
+      this._invHooked = true;
+      addEventListener('mousemove', (e) => this.invOpen && this._invMouseMove(e));
+      addEventListener('mouseup', (e) => this.invOpen && this._invMouseUp(e));
+    }
+  }
+  closeInv() { this.inv.classList.add('hidden'); this.ghost?.remove(); this.ghost = null; this.drag = null; this.pickedSlot = null; }
 
   _slotHtml(it) {
     if (!it) return '';
@@ -186,7 +194,8 @@ export class UI {
   renderInv(state) {
     const p = this.player;
     const storage = state?.storage || [];
-    const sig = JSON.stringify([p.inv.map((x) => x && [x.uid, x.uses]), this.withStorage && storage.map((x) => x && x.uid), p.sel, this.detailItem?.uid]);
+    if (this.drag?.started) return; // don't rebuild under the mouse mid-drag
+    const sig = JSON.stringify([p.inv.map((x) => x && [x.uid, x.uses]), this.withStorage && storage.map((x) => x && x.uid), p.sel, this.pickedSlot]);
     if (sig === this._invSig) return;
     this._invSig = sig;
     this.inv.querySelector('.istore').classList.toggle('hidden', !this.withStorage);
@@ -197,28 +206,66 @@ export class UI {
       items.forEach((it, k) => {
         const idx = k + offset;
         const c = h('div', 'slot islot' + (area === 'inv' && idx === p.sel ? ' sel' : ''), (area === 'inv' && idx < HOTBAR ? `<i>${(idx + 1) % 10}</i>` : '') + this._slotHtml(it));
+        c.dataset.area = area; c.dataset.idx = idx;
+        if (this.pickedSlot && this.pickedSlot.area === area && this.pickedSlot.idx === idx) c.classList.add('picked');
         if (it) {
-          c.draggable = true;
-          c.ondragstart = (e) => { this.drag = { area, idx }; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'x'); };
-          c.onmouseenter = () => { this.detailItem = it; this._detail(it); };
-          c.oncontextmenu = (e) => { e.preventDefault(); if (area === 'inv') { this.cb.onDropItem(idx); this._invSig = null; } };
-          c.onclick = () => { this.detailItem = it; this._detail(it); if (area === 'inv' && idx < HOTBAR) { p.sel = idx; } this._invSig = null; };
+          c.onmouseenter = () => { if (!this.drag) this._detail(it); };
+          c.oncontextmenu = (e) => { e.preventDefault(); if (area === 'inv') { this.cb.onDropItem(idx); this.pickedSlot = null; this._invSig = null; } };
+          c.onmousedown = (e) => { if (e.button === 0) { e.preventDefault(); this.drag = { area, idx, sx: e.clientX, sy: e.clientY, started: false, html: c.innerHTML }; } };
+        } else {
+          c.onmousedown = (e) => { if (e.button === 0) { e.preventDefault(); this.drag = { area, idx, empty: true, sx: e.clientX, sy: e.clientY }; } };
         }
-        c.ondragover = (e) => { e.preventDefault(); c.classList.add('over'); };
-        c.ondragleave = () => c.classList.remove('over');
-        c.ondrop = (e) => { e.preventDefault(); this._dropOn(area, idx); };
         grid.appendChild(c);
       });
     };
     fill('.hot', 'inv', p.inv.slice(0, HOTBAR));
     fill('.pack', 'inv', p.inv.slice(HOTBAR), HOTBAR);
     if (this.withStorage) fill('.store', 'store', storage);
-    if (!this.detailItem) this._detail(null);
+    const pk = this.pickedSlot;
+    const pkItem = pk ? (pk.area === 'inv' ? p.inv[pk.idx] : storage[pk.idx]) : null;
+    if (pk && !pkItem) this.pickedSlot = null;
+    if (pkItem) this._detail(pkItem); else if (!this._shownDetail) this._detail(null);
   }
 
-  _dropOn(area, idx) {
+  /** custom mouse drag (more reliable than the browser's drag-and-drop): also works as click-to-pick, click-to-place */
+  _invMouseMove(e) {
+    const d = this.drag;
+    if (!d || d.empty) return;
+    if (!d.started && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) {
+      d.started = true;
+      this.ghost = h('div', 'slot ghost', d.html); this.root.appendChild(this.ghost);
+    }
+    if (d.started) {
+      this.ghost.style.left = e.clientX - 34 + 'px'; this.ghost.style.top = e.clientY - 32 + 'px';
+      this.inv.querySelectorAll('.islot.over').forEach((x) => x.classList.remove('over'));
+      document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.islot')?.classList.add('over');
+    }
+  }
+  _invMouseUp(e) {
     const d = this.drag; this.drag = null;
     if (!d) return;
+    this.ghost?.remove(); this.ghost = null;
+    this.inv.querySelectorAll('.islot.over').forEach((x) => x.classList.remove('over'));
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.islot');
+    if (d.started) {
+      if (target) this._dropOn(d.area, d.idx, target.dataset.area, +target.dataset.idx);
+      else if (!document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.invp') && d.area === 'inv') this.cb.onDropItem(d.idx); // dragged off the window = drop it
+      this.pickedSlot = null; this._invSig = null;
+      return;
+    }
+    // a click: first click picks an item up, second click puts it down (or swaps)
+    const pk = this.pickedSlot;
+    if (pk && !(pk.area === d.area && pk.idx === d.idx)) { this._dropOn(pk.area, pk.idx, d.area, d.idx); this.pickedSlot = null; }
+    else if (pk) this.pickedSlot = null;
+    else if (!d.empty) {
+      this.pickedSlot = { area: d.area, idx: d.idx };
+      if (d.area === 'inv' && d.idx < HOTBAR) this.player.sel = d.idx;
+    }
+    this._invSig = null;
+  }
+
+  _dropOn(fromArea, fromIdx, area, idx) {
+    const d = { area: fromArea, idx: fromIdx };
     const p = this.player;
     if (d.area === 'inv' && area === 'inv') { [p.inv[d.idx], p.inv[idx]] = [p.inv[idx], p.inv[d.idx]]; }
     else if (d.area === 'inv' && area === 'store') this.cb.onStore(d.idx, idx);
@@ -228,6 +275,7 @@ export class UI {
   }
 
   _detail(it) {
+    this._shownDetail = it;
     const el = this.inv.querySelector('.idetail');
     if (!it) { el.innerHTML = '<div class="k">Hover an item to see what it does.</div>'; return; }
     const a = analyze(it.parts);
