@@ -41,6 +41,7 @@ export class UI {
       <div class="top"><div class="phase"></div><div class="sub2"></div></div>
       <div class="code"></div>
       <div class="cross">+</div>
+      <div class="hm"><i></i><i></i><i></i><i></i></div>
       <div class="prompt"></div>
       <div class="toasts"></div>
       <div class="held"></div>
@@ -106,6 +107,11 @@ export class UI {
     setTimeout(() => t.classList.add('fade'), 2800);
     setTimeout(() => t.remove(), 3400);
     while (this.el.toasts.children.length > 5) this.el.toasts.firstChild.remove();
+  }
+
+  hitMarker(kill) {
+    const e = this.hud.querySelector('.hm');
+    e.classList.remove('on', 'kill'); void e.offsetWidth; e.classList.add(kill ? 'kill' : 'on');
   }
 
   jumpScare() {

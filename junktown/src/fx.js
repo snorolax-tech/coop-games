@@ -10,6 +10,7 @@ export class FX {
     this.pool = [];
     this.live = [];
     this.missiles = [];
+    this.debris = [];
     this.mats = {};
   }
   _mat(color) {
@@ -68,7 +69,29 @@ export class FX {
     }
   }
 
+  /** throw a real mesh (e.g. a zombie arm) into the world with physics; it lies there a while then sinks */
+  piece(mesh, vel, spin = 8) {
+    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
+    mesh.updateWorldMatrix(true, false);
+    mesh.matrixWorld.decompose(wp, wq, ws);
+    mesh.removeFromParent();
+    mesh.position.copy(wp); mesh.quaternion.copy(wq); mesh.scale.copy(ws);
+    this.scene.add(mesh);
+    this.debris.push({ m: mesh, v: vel.clone(), w: new THREE.Vector3((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin), life: 6 });
+    if (this.debris.length > 40) { const d = this.debris.shift(); this.scene.remove(d.m); }
+  }
+
   update(dt) {
+    for (let i = this.debris.length - 1; i >= 0; i--) {
+      const d = this.debris[i];
+      d.life -= dt;
+      d.v.y -= 20 * dt;
+      d.m.position.addScaledVector(d.v, dt);
+      d.m.rotation.x += d.w.x * dt; d.m.rotation.y += d.w.y * dt; d.m.rotation.z += d.w.z * dt;
+      if (d.m.position.y < 0.12) { d.m.position.y = 0.12; d.v.y *= -0.3; d.v.x *= 0.6; d.v.z *= 0.6; d.w.multiplyScalar(0.6); }
+      if (d.life < 1) d.m.position.y -= dt * 0.4;
+      if (d.life <= 0) { this.scene.remove(d.m); this.debris.splice(i, 1); }
+    }
     for (let i = this.live.length - 1; i >= 0; i--) {
       const m = this.live[i], u = m.userData;
       u.life -= dt;

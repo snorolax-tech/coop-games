@@ -4,6 +4,7 @@ import { analyze, itemMesh, makeItem } from './items.js';
 import { collide, MAP, LAYOUT } from './town.js';
 import { wallBox } from './director.js';
 import { sfx } from './audio.js';
+import { buildFPArms, PLAYER_COLORS } from './character.js';
 
 export const HOTBAR = 10;
 export const INV_SIZE = 25; // 10 hotbar + 15 backpack
@@ -30,6 +31,13 @@ export class Player {
     this.hand = new THREE.Group();
     this.hand.position.set(0.38, -0.42, -0.7);
     camera.add(this.hand);
+    this.itemHold = new THREE.Group(); this.hand.add(this.itemHold);
+    this.setColor(PLAYER_COLORS[0]);
+    // swoosh trail drawn during melee swings
+    this.trail = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.7, 24, 1, Math.PI * 0.2, Math.PI * 0.6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    this.trail.position.set(0.1, -0.1, -1.5); this.trail.visible = false; camera.add(this.trail);
+    this.kick = 0;
     this.heldSig = null;
     // flashlight
     this.light = new THREE.SpotLight(0xfff4d6, 0, 40, 0.45, 0.5, 1.2);
@@ -43,6 +51,12 @@ export class Player {
     this.ghost.visible = false;
     game.scene.add(this.ghost);
     this.reset();
+  }
+
+  setColor(color) {
+    if (this.arms) this.hand.remove(this.arms.root);
+    this.arms = buildFPArms(color);
+    this.hand.add(this.arms.root);
   }
 
   reset() {
@@ -104,7 +118,8 @@ export class Player {
     const eye = this.down ? 0.5 : EYE;
     this.cam.position.set(this.pos.x, this.pos.y + eye + Math.sin(this.bob) * 0.05, this.pos.z);
     this.cam.rotation.set(0, 0, 0);
-    this.cam.rotateY(this.yaw); this.cam.rotateX(this.pitch);
+    this.cam.rotateY(this.yaw); this.cam.rotateX(this.pitch + this.kick);
+    this.kick *= Math.exp(-14 * dt);
     if (this.hurtT > 0) { this.hurtT -= dt; this.cam.rotateZ(Math.sin(this.hurtT * 60) * this.hurtT * 0.08); }
     if (this.down) this.cam.rotateZ(0.3);
     if (this.stunT > 0) { this.cam.rotateZ(Math.sin(this.bob * 0.7 + performance.now() / 300) * 0.12 * Math.min(1, this.stunT)); }
@@ -114,25 +129,47 @@ export class Player {
     const sig = it ? it.parts.join(',') : '';
     if (sig !== this.heldSig) {
       this.heldSig = sig;
-      this.hand.clear();
+      this.itemHold.clear();
       if (it) {
         const m = itemMesh(it.parts, 1.1);
         m.rotation.set(s.form === 'melee' ? -2.3 : -Math.PI + 0.1, 0.15, 0);
         if (s.form !== 'melee') m.position.set(0, 0, 0.2);
-        this.hand.add(m);
+        this.itemHold.add(m);
       }
+      // two-handed things get a support hand
+      this.arms.left.visible = !!it && (s.form === 'gun' || s.form === 'flamer');
+      this.arms.left.position.set(-0.22, -0.04, -0.38);
+      this.style = !it || s.form !== 'melee' ? 'slash' : s.P.long >= 2 && s.P.sharp && !(s.P.blunt >= 3) ? 'thrust' : (s.P.blunt >= 3 || s.P.spin >= 2) ? 'smash' : 'slash';
       this.swing = 0; this.flaming = false;
     }
     this.hand.visible = !this.down;
+    this.arms.root.visible = true;
     this.cd -= dt;
     const night = this.g.town.night;
     this.light.intensity = (s?.light ? 40 + s.light * 25 : 0) + night * 9;
     this.light.distance = s?.light ? 45 : 16;
 
-    // swing animation
-    const swingK = this.swing > 0 ? Math.sin((1 - this.swing / 0.3) * Math.PI) : 0;
-    this.hand.rotation.set(-swingK * 1.4, swingK * 0.8, 0);
-    this.hand.position.set(0.38 - swingK * 0.25, -0.42 + Math.sin(this.bob) * 0.025, -0.7);
+    // swing animation: wind up, strike fast, recover. different styles for stabbing, smashing, slashing
+    const u = this.swing > 0 ? 1 - this.swing / 0.3 : 0;
+    const strike = u < 0.25 ? -u / 0.25 * 0.35 : u < 0.55 ? -0.35 + (u - 0.25) / 0.3 * 1.35 : 1 - (u - 0.55) / 0.45;
+    const k = this.swing > 0 ? strike : 0;
+    const bobY = Math.sin(this.bob) * 0.025, bobX = Math.cos(this.bob * 0.5) * 0.015;
+    if (this.style === 'thrust') {
+      this.hand.rotation.set(-0.25 * k, 0, 0);
+      this.hand.position.set(0.38 - 0.18 * Math.max(0, k) + bobX, -0.42 + 0.1 * Math.max(0, k) + bobY, -0.7 - 0.6 * k);
+    } else if (this.style === 'smash') {
+      this.hand.rotation.set(0.9 * -k + (k < 0 ? 0.6 * -k : 0), 0.2 * k, 0.3 * k);
+      this.hand.position.set(0.38 - 0.25 * Math.max(0, k) + bobX, -0.42 + 0.25 * -k * (k < 0 ? 1 : 0.3) + bobY, -0.7 - 0.2 * Math.max(0, k));
+    } else {
+      this.hand.rotation.set(-0.5 * Math.max(0, k), 1.1 * k, -0.5 * k);
+      this.hand.position.set(0.38 - 0.4 * k + bobX, -0.42 + 0.06 * Math.abs(k) + bobY, -0.7 - 0.15 * Math.max(0, k));
+    }
+    const tv = this.swing > 0 && this.style !== 'thrust' && u > 0.25 && u < 0.75;
+    this.trail.visible = tv;
+    if (tv) {
+      this.trail.material.opacity = 0.22 * (1 - Math.abs(u - 0.45) / 0.3);
+      this.trail.rotation.set(0, 0, this.style === 'smash' ? -Math.PI / 2 - 0.3 : 0.15);
+    }
     if (this.swing > 0) {
       this.swing -= dt;
       if (this.hitAt > 0) { this.hitAt -= dt; if (this.hitAt <= 0) this._meleeHit(s); }
@@ -206,7 +243,8 @@ export class Player {
     let hits = 0;
     this._cone(s.reach, (s.arc * Math.PI / 180) / 2, (z, dx, dz) => { if (hits < 3) { hits++; this.g.hitZ({ id: z.id, parts: it.parts, k: 'melee', dx, dz }); } });
     if (hits) {
-      sfx('hit');
+      sfx(s.dmg >= 28 ? 'crit' : s.P.sharp > s.P.blunt ? 'slice' : 'thud');
+      this.kick = s.dmg >= 28 ? -0.06 : -0.035;
       it.uses -= 1;
       if (it.uses <= 0) this._break();
     }
@@ -220,6 +258,7 @@ export class Player {
     this._spawnProjectile('gun', it.parts, p, f.clone().multiplyScalar(s.speed), 3, true);
     this.g.send({ t: 'fx', k: 'proj', kind: 'gun', parts: it.parts, p: p.toArray(), v: f.clone().multiplyScalar(s.speed).toArray() });
     sfx(s.P.explosive ? 'rocket' : 'shoot');
+    this.kick = 0.05 + (s.P.explosive ? 0.05 : 0);
     it.uses--;
     if (it.uses <= 0) this._break();
   }

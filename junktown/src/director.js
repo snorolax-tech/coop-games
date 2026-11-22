@@ -156,6 +156,11 @@ export class Director {
     if (h.k !== 'flame') {
       const kb = s.fx.kb * (h.k === 'gun' ? 0.5 : 1) / (z.T.scale * z.T.scale);
       z.kx += (h.dx || 0) * kb * 2.2; z.kz += (h.dz || 0) * kb * 2.2;
+      // getting hit makes them stumble: they stop walking and can't attack for a moment
+      const st = (h.k === 'melee' ? 0.3 + Math.min(0.4, kb * 0.03) : 0.18) * (z.T.boss ? 0.25 : z.type === 'brute' ? 0.5 : 1);
+      z.stagger = Math.max(z.stagger || 0, st);
+      z.atk = Math.max(z.atk, z.stagger);
+      z.hdx = h.dx || 0; z.hdz = h.dz || 0; z.hbig = dmg >= 25;
     }
     this._damage(z, dmg, players);
     if (s.fx.chain && h.k !== 'flame') this._chain(z, s.fx, dmg, players);
@@ -233,7 +238,7 @@ export class Director {
   _kill(z, players) {
     this.zombies.splice(this.zombies.indexOf(z), 1);
     this.state.kills++;
-    this.emit({ k: 'zdie', id: z.id, x: z.x, z: z.z, type: z.type });
+    this.emit({ k: 'zdie', id: z.id, x: z.x, z: z.z, type: z.type, dx: z.hdx || 0, dz: z.hdz || 0, big: !!z.hbig });
     if (z.T.boom) this.boom(z.x, z.z, { radius: z.T.boom.radius, dmg: z.T.boom.dmg, P: { explosive: 2 }, fx: { fire: 3 } }, 1, players);
     if (Math.random() < 0.08) {
       const pool = ['nails', 'tape', 'battery', 'scrap', 'bottle', 'bandage', 'lighter', 'spring', 'wire', 'brick'];
@@ -363,7 +368,7 @@ export class Director {
       if (z.bleed > 0) { z.bleed -= dt; dot += 4; }
       for (const zn of s.zones) if (Math.hypot(zn.x - z.x, zn.z - z.z) < zn.r) { if (zn.kind === 'fire') z.burn = Math.max(z.burn, 1.5); if (zn.kind === 'gas') z.poison = Math.max(z.poison, 1.5); }
       if (dot) { this._damage(z, dot * dt, players); if (z.hp <= 0) continue; }
-      z.stun -= dt; z.slow -= dt; z.atk -= dt;
+      z.stun -= dt; z.slow -= dt; z.atk -= dt; z.stagger = (z.stagger || 0) - dt;
 
       // pick a target: lure > nearest standing player > wander towards town
       let tx, tz, tp = -1;
@@ -384,8 +389,8 @@ export class Director {
       if (z.T.stalker) { z.frozen = seenBy(z, players); if (z.frozen) speed = 0; }
       if (z.T.boss) { const r = this._boss(z, dt, players, tp, d); if (r === 'dead') continue; if (r) { dx = r.dx; dz = r.dz; d = 1; speed = r.speed; } }
       if (speed > 0 || z.mode !== 'charge') z.yaw = Math.atan2(dx, dz);
-      if (z.stun > 0) speed = 0;
-      if (tp >= 0 && d < z.T.reach + 0.4 && z.mode !== 'charge' && !(z.T.stalker && z.frozen)) {
+      if (z.stun > 0 || z.stagger > 0) speed = 0;
+      if (tp >= 0 && z.stagger <= 0 && d < z.T.reach + 0.4 && z.mode !== 'charge' && !(z.T.stalker && z.frozen)) {
         speed = 0;
         z.attacking = true;
         if (z.atk <= 0 && z.stun <= 0) {
@@ -509,7 +514,7 @@ export class Director {
     s.looted = [...this.looted];
     s.z = this.zombies.map((z) => {
       const f = (z.burn > 0 ? 1 : 0) | (z.stun > 0 ? 2 : 0) | (z.poison > 0 || z.slow > 0 ? 4 : 0) | (z.attacking || z.mode === 'windup' ? 8 : 0) | (z.flash ? 16 : 0)
-        | (z.frozen ? 32 : 0) | (z.mode === 'charge' ? 64 : 0);
+        | (z.frozen ? 32 : 0) | (z.mode === 'charge' ? 64 : 0) | (z.stagger > 0 ? 128 : 0);
       z.flash = false;
       return [z.id, z.ti, Math.round(z.x * 100) / 100, Math.round(z.z * 100) / 100, Math.round(z.yaw * 100) / 100, Math.round(z.hp / z.max * 100), f];
     });
