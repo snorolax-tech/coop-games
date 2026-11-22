@@ -67,6 +67,7 @@ export class Director {
       blackout: false, boss: null, storage: new Array(STORAGE_SIZE).fill(null),
     };
     this.blackoutAt = -1; this.blackoutT = 0; this.bossPending = null; this.acidT = 0; this.nightT = 0;
+    this.scatterGround(1);
     this.emit({ k: 'dawn', day: 1 });
   }
 
@@ -86,6 +87,19 @@ export class Director {
       this.emit({ k: 'loot', p, cid, items: [] , lurker: true });
       return;
     }
+    // car alarm: the whole street hears it
+    if (c.type === 'car' && Math.random() < 0.22) {
+      this.emit({ k: 'alarm', cid, x: c.x, z: c.z });
+      this._zone('lure', c.x, c.z, 45, 9);
+      const n = 3 + Math.min(5, day);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, d = 26 + Math.random() * 12;
+        const x = Math.max(-MAP - 4, Math.min(MAP + 4, c.x + Math.cos(a) * d)), zz = Math.max(-MAP - 4, Math.min(MAP + 4, c.z + Math.sin(a) * d));
+        const q = this._spawnAt(day >= 2 && Math.random() < 0.4 ? 'runner' : 'walker', x, zz); collide(q, 0.5);
+      }
+    }
+    // something in the dumpster grabs you
+    if (c.type === 'dumpster' && Math.random() < 0.2) this.emit({ k: 'grab', p, cid, x: c.x, z: c.z });
     this.emit({ k: 'loot', p, cid, items: rollLoot(c.type, day) });
   }
 
@@ -116,10 +130,41 @@ export class Director {
     [st[a], st[b]] = [st[b], st[a]];
   }
 
+  /** scatter some loot on the ground around town... and some of it isn't loot */
+  scatterGround(day) {
+    this.fakes ||= new Set();
+    const pool = ['nails', 'tape', 'bottle', 'scrap', 'bandage', 'battery', 'rope', 'pills', 'pipe', 'knife', 'lighter', 'spring'];
+    const spot = () => {
+      for (let tries = 0; tries < 20; tries++) {
+        const x = (Math.random() - 0.5) * 2 * (MAP - 6), z = (Math.random() - 0.5) * 2 * (MAP - 6);
+        if (Math.hypot(x, z) < 14) continue;
+        const q = { x, z };
+        if (!collide(q, 1.2)) return q;
+      }
+      return null;
+    };
+    const real = 3, fake = Math.min(5, 1 + day);
+    for (let i = 0; i < real + fake; i++) {
+      const sp = spot(); if (!sp) continue;
+      const id = this.nextId++;
+      this.state.ground.push({ id, item: { uid: Math.floor(Math.random() * 1e9), parts: [pool[Math.floor(Math.random() * pool.length)]], uses: null }, x: sp.x, z: sp.z });
+      if (i >= real) this.fakes.add(id);
+    }
+  }
+
   take(p, gid) {
     const g = this.state.ground;
     const i = g.findIndex((k) => k.id === gid);
     if (i < 0) return;
+    if (this.fakes?.has(gid)) {
+      // it was never loot: a zombie lying still, playing dead
+      this.fakes.delete(gid);
+      const [k] = g.splice(i, 1);
+      const z = this._spawnAt('lurker', k.x, k.z);
+      z.atk = 0.5;
+      this.emit({ k: 'scare', p, x: k.x, z: k.z, kind: 'fake' });
+      return;
+    }
     const [k] = g.splice(i, 1);
     this.emit({ k: 'take', p, item: k.item });
   }
@@ -326,6 +371,7 @@ export class Director {
         s.ph = 'day'; s.day++; s.t = DAY_LEN;
         for (const id of [...this.looted]) if (Math.random() < 0.35) this.looted.delete(id);
         s.zones = s.zones.filter((zn) => zn.kind !== 'lure');
+        this.scatterGround(s.day);
         this.emit({ k: 'dawn', day: s.day });
       }
     }

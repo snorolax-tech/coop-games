@@ -112,7 +112,7 @@ export class Player {
     this.pos.z = Math.max(-MAP, Math.min(MAP, this.pos.z));
     const moving = wish.lengthSq() > 0.01 && this.grounded;
     this.bob += dt * (moving ? (inp.sprint ? 13 : 9) : 0);
-    if (this.g.state?.ph === 'day' && !this.down) this.hp = Math.min(100, this.hp + dt * 0.5);
+    if (this.g.state?.ph === 'day' && !this.down) this.hp = Math.min(100, this.hp + dt * 0.75);
 
     // ---- camera
     const eye = this.down ? 0.5 : EYE;
