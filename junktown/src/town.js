@@ -5,6 +5,8 @@ import * as THREE from 'three';
 export const MAP = 66;          // players are kept inside +-MAP
 export const SPAWN_R = 72;      // zombies spawn on this ring
 export const BENCH = { x: 4, z: 4 };
+export const STORAGE = { x: 8.5, z: 3.5 };
+export const STORAGE_SIZE = 20;
 export const BASE = { x: 0, z: 0 };
 
 // [item, first day it can show up, weight]. Good stuff is rare and only appears on later days.
@@ -79,6 +81,7 @@ for (const c of LAYOUT.C) if (c.collide) {
     : { minX: c.x - across, maxX: c.x + across, minZ: c.z - along, maxZ: c.z + along });
 }
 COLLIDERS.push({ minX: BENCH.x - 1.2, maxX: BENCH.x + 1.2, minZ: BENCH.z - 0.6, maxZ: BENCH.z + 0.6 });
+COLLIDERS.push({ minX: STORAGE.x - 0.9, maxX: STORAGE.x + 0.9, minZ: STORAGE.z - 0.6, maxZ: STORAGE.z + 0.6 });
 
 /** push a circle (pos.x,pos.z,r) out of all colliders (+ extra list). returns true if it hit something */
 export function collide(pos, r, extra) {
@@ -176,6 +179,11 @@ export class Town {
     box(0.5, 0.3, 0.3, 0xd62828, -0.6, 1.22, 0, bench); box(0.15, 0.15, 0.6, 0x888888, 0.5, 1.15, 0.1, bench);
     box(2.4, 1, 0.1, 0x6c584c, 0, 1.6, -0.55, bench);
     this.benchSign = bench;
+    // shared base storage locker
+    const st = new THREE.Group(); st.position.set(STORAGE.x, 0, STORAGE.z); s.add(st);
+    box(1.8, 1.1, 1.2, 0x3d5a80, 0, 0.55, 0, st); box(1.85, 0.12, 1.25, 0x293d5a, 0, 1.15, 0, st);
+    for (const x of [-0.5, 0.5]) box(0.25, 0.12, 0.05, 0xdddddd, x, 0.8, 0.62, st);
+    box(1.4, 0.3, 0.02, 0xf2c230, 0, 0.45, 0.61, st);
     const fire = new THREE.Group(); fire.position.set(-2, 0, -2); s.add(fire);
     for (let i = 0; i < 6; i++) { const r = box(0.9, 0.15, 0.15, 0x5c3d2e, 0, 0.1, 0, fire); r.rotation.y = i; }
     this.flame = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.2, 6), new THREE.MeshBasicMaterial({ color: 0xff8c1a }));

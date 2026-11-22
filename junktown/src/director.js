@@ -2,7 +2,7 @@
 // placed structures (barricades, traps, magnets, mines), fire/gas zones, explosions.
 import { analyze } from './items.js';
 import { ZTYPES } from './zombies.js';
-import { LAYOUT, rollLoot, collide, SPAWN_R, MAP, COLLIDERS } from './town.js';
+import { LAYOUT, rollLoot, collide, SPAWN_R, MAP, COLLIDERS, STORAGE, STORAGE_SIZE } from './town.js';
 
 export const DAY_LEN = 120;
 export const FIRST_DAY_LEN = 150;
@@ -64,7 +64,7 @@ export class Director {
     this.state = {
       ph: 'day', day: 1, t: FIRST_DAY_LEN, left: 0, kills: 0,
       looted: [], ground: [], st: [], zones: [], z: [], skip: [false, false], restart: [false, false],
-      blackout: false, boss: null,
+      blackout: false, boss: null, storage: new Array(STORAGE_SIZE).fill(null),
     };
     this.blackoutAt = -1; this.blackoutT = 0; this.bossPending = null; this.acidT = 0; this.nightT = 0;
     this.emit({ k: 'dawn', day: 1 });
@@ -91,6 +91,29 @@ export class Director {
 
   drop(item, x, z) {
     this.state.ground.push({ id: this.nextId++, item, x, z });
+  }
+
+  /** put an item into the shared base storage (slot = preferred index) */
+  store(p, item, slot) {
+    const st = this.state.storage;
+    let i = slot != null && slot >= 0 && slot < st.length && !st[slot] ? slot : st.indexOf(null);
+    if (i < 0) { this.drop(item, STORAGE.x, STORAGE.z + 1.5); this.emit({ k: 'deny', p, why: 'Storage is full, dropped it next to the locker' }); return; }
+    st[i] = item;
+    this.emit({ k: 'stored', p });
+  }
+
+  withdraw(p, idx, slot) {
+    const st = this.state.storage;
+    const item = st[idx];
+    if (!item) return;
+    st[idx] = null;
+    this.emit({ k: 'take', p, item, slot });
+  }
+
+  moveStorage(a, b) {
+    const st = this.state.storage;
+    if (a < 0 || b < 0 || a >= st.length || b >= st.length) return;
+    [st[a], st[b]] = [st[b], st[a]];
   }
 
   take(p, gid) {

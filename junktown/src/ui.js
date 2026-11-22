@@ -1,5 +1,6 @@
 // Menus, HUD, and the crafting bench screen.
 import { analyze, formLabel, PROP_INFO, PROPS, MAX_PARTS, BASE } from './items.js';
+import { HOTBAR } from './player.js';
 
 const h = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; e.innerHTML = html; return e; };
 const fmt = (t) => { t = Math.max(0, Math.ceil(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
@@ -72,6 +73,23 @@ export class UI {
       <div class="cmid"><div class="cslots"></div><div class="arrow">➜</div><div class="preview"></div></div>
       <div class="cbtns"><button data-a="craft">Craft it!</button><button class="alt" data-a="close">Close (E)</button></div>`);
     root.appendChild(this.craft);
+
+    // inventory screen
+    this.inv = h('div', 'invp hidden', `
+      <div class="ctitle">🎒 INVENTORY <small>drag items to move them · right-click to drop on the ground · Tab / E to close</small></div>
+      <div class="invcols">
+        <div class="invleft">
+          <div class="ilabel">Hotbar (1–0)</div><div class="igrid hot"></div>
+          <div class="ilabel">Backpack</div><div class="igrid pack"></div>
+          <div class="istore"><div class="ilabel">🔒 Base storage <span class="k">(shared with your friend, stays between nights)</span></div><div class="igrid store"></div></div>
+          <div class="ilabel nostore k">Stand next to the blue locker at base to use shared storage.</div>
+        </div>
+        <div class="idetail"></div>
+      </div>
+      <div class="cbtns"><button class="alt" data-a="close">Close (Tab)</button></div>`);
+    root.appendChild(this.inv);
+    this.inv.querySelector('[data-a=close]').onclick = () => cb.onCloseInv();
+    this.drag = null;
     this.craft.querySelector('[data-a=close]').onclick = () => cb.onCloseCraft();
     this.craft.querySelector('[data-a=craft]').onclick = () => cb.onCraft(this.picked);
     this.picked = [];
@@ -120,7 +138,7 @@ export class UI {
     this.el.hurt.style.opacity = Math.max(0, p.hurtT * 1.5);
     this.el.downed.classList.toggle('hidden', !p.down || s.ph === 'over');
     // hotbar
-    this.set('bar', p.inv.map((it, i) => {
+    this.set('bar', p.inv.slice(0, HOTBAR).map((it, i) => {
       if (!it) return `<div class="slot${i === p.sel ? ' sel' : ''}"><i>${(i + 1) % 10}</i></div>`;
       const a = analyze(it.parts);
       const u = a.maxUses > 1 ? `<b style="width:${Math.max(0, it.uses / a.maxUses * 100)}%"></b>` : '';
@@ -144,6 +162,72 @@ export class UI {
       const r = s.restart || [];
       this.set('orr', g.mode === 'solo' ? '' : r[g.me] ? 'Waiting for your friend…' : r[1 - g.me] ? 'Your friend wants to go again!' : '');
     }
+  }
+
+  // ------------------------------------------------------------ inventory screen
+  get invOpen() { return !this.inv.classList.contains('hidden'); }
+  openInv(player, withStorage) { this.player = player; this.withStorage = withStorage; this.inv.classList.remove('hidden'); this._invSig = null; this.detailItem = null; }
+  closeInv() { this.inv.classList.add('hidden'); }
+
+  _slotHtml(it) {
+    if (!it) return '';
+    const a = analyze(it.parts);
+    const u = a.maxUses > 1 && it.uses != null ? `<b style="width:${Math.max(0, it.uses / a.maxUses * 100)}%"></b>` : '';
+    return `<div class="ic">${icon(a.P)}</div><div class="nm">${a.name}</div>${u}`;
+  }
+
+  /** called every frame while open; only rebuilds when something changed */
+  renderInv(state) {
+    const p = this.player;
+    const storage = state?.storage || [];
+    const sig = JSON.stringify([p.inv.map((x) => x && [x.uid, x.uses]), this.withStorage && storage.map((x) => x && x.uid), p.sel, this.detailItem?.uid]);
+    if (sig === this._invSig) return;
+    this._invSig = sig;
+    this.inv.querySelector('.istore').classList.toggle('hidden', !this.withStorage);
+    this.inv.querySelector('.nostore').classList.toggle('hidden', !!this.withStorage);
+    const fill = (sel, area, items, offset = 0) => {
+      const grid = this.inv.querySelector(sel);
+      grid.innerHTML = '';
+      items.forEach((it, k) => {
+        const idx = k + offset;
+        const c = h('div', 'slot islot' + (area === 'inv' && idx === p.sel ? ' sel' : ''), (area === 'inv' && idx < HOTBAR ? `<i>${(idx + 1) % 10}</i>` : '') + this._slotHtml(it));
+        if (it) {
+          c.draggable = true;
+          c.ondragstart = (e) => { this.drag = { area, idx }; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'x'); };
+          c.onmouseenter = () => { this.detailItem = it; this._detail(it); };
+          c.oncontextmenu = (e) => { e.preventDefault(); if (area === 'inv') { this.cb.onDropItem(idx); this._invSig = null; } };
+          c.onclick = () => { this.detailItem = it; this._detail(it); if (area === 'inv' && idx < HOTBAR) { p.sel = idx; } this._invSig = null; };
+        }
+        c.ondragover = (e) => { e.preventDefault(); c.classList.add('over'); };
+        c.ondragleave = () => c.classList.remove('over');
+        c.ondrop = (e) => { e.preventDefault(); this._dropOn(area, idx); };
+        grid.appendChild(c);
+      });
+    };
+    fill('.hot', 'inv', p.inv.slice(0, HOTBAR));
+    fill('.pack', 'inv', p.inv.slice(HOTBAR), HOTBAR);
+    if (this.withStorage) fill('.store', 'store', storage);
+    if (!this.detailItem) this._detail(null);
+  }
+
+  _dropOn(area, idx) {
+    const d = this.drag; this.drag = null;
+    if (!d) return;
+    const p = this.player;
+    if (d.area === 'inv' && area === 'inv') { [p.inv[d.idx], p.inv[idx]] = [p.inv[idx], p.inv[d.idx]]; }
+    else if (d.area === 'inv' && area === 'store') this.cb.onStore(d.idx, idx);
+    else if (d.area === 'store' && area === 'inv') { if (!p.inv[idx]) this.cb.onWithdraw(d.idx, idx); else this.cb.onWithdraw(d.idx, null); }
+    else if (d.area === 'store' && area === 'store') this.cb.onStorageMove(d.idx, idx);
+    this._invSig = null;
+  }
+
+  _detail(it) {
+    const el = this.inv.querySelector('.idetail');
+    if (!it) { el.innerHTML = '<div class="k">Hover an item to see what it does.</div>'; return; }
+    const a = analyze(it.parts);
+    const uses = a.maxUses > 1 && it.uses != null ? `<div class="k">${a.form === 'flamer' ? `Fuel: ${(it.uses / 10).toFixed(1)}s` : a.form === 'gun' ? `Shots left: ${it.uses}` : `Durability: ${it.uses} / ${a.maxUses}`}</div>` : '';
+    el.innerHTML = `<div class="pn">${a.name}</div><div class="pf">${formLabel(a.form)}</div><div class="chips">${propChips(a.P)}</div>
+      <div class="pd">${a.desc.replace(/\n/g, '<br>')}</div>${uses}<div class="pp">Made from: ${it.parts.map((x) => BASE[x].name).join(', ')}</div>`;
   }
 
   // ------------------------------------------------------------ crafting screen

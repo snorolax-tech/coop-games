@@ -5,7 +5,8 @@ import { collide, MAP, LAYOUT } from './town.js';
 import { wallBox } from './director.js';
 import { sfx } from './audio.js';
 
-export const INV_SIZE = 10;
+export const HOTBAR = 10;
+export const INV_SIZE = 25; // 10 hotbar + 15 backpack
 const EYE = 1.65, R = 0.4, GRAV = 24;
 const BUILD_H = new Map(); // collider index -> height (for projectiles)
 LAYOUT.B.forEach((b, i) => BUILD_H.set(i, b.h));
