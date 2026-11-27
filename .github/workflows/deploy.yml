@@ -1,6 +1,8 @@
 # Builds both games and publishes them to GitHub Pages on every push to main.
 #   Cooking Show Chaos -> https://<user>.github.io/<repo>/
 #   Monster Ranch      -> https://<user>.github.io/<repo>/monster-ranch/
+#   Scrap Brawl        -> https://<user>.github.io/<repo>/scrap-brawl/
+#   Junktown Nights    -> https://<user>.github.io/<repo>/junktown/
 name: Deploy to GitHub Pages
 
 on:
@@ -31,12 +33,22 @@ jobs:
       - name: Build Monster Ranch
         working-directory: monster-ranch
         run: npm ci && npm run build
+      - name: Build Scrap Brawl
+        working-directory: scrap-brawl
+        run: npm ci && npm run build
+      - name: Build Junktown Nights
+        working-directory: junktown
+        run: npm ci && npm run build
       - name: Combine sites
         run: |
           mkdir -p site
           cp -r cooking-show-chaos/dist/. site/
           mkdir -p site/monster-ranch
           cp -r monster-ranch/dist/. site/monster-ranch/
+          mkdir -p site/scrap-brawl
+          cp -r scrap-brawl/dist/. site/scrap-brawl/
+          mkdir -p site/junktown
+          cp -r junktown/dist/. site/junktown/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
